@@ -4,7 +4,7 @@
   "private": true,
   "description": "App para mecánicos de coches, camionetas y montacargas: proyectos, diagnóstico, bitácora y Maestro IA. Funciona sin internet.",
   "scripts": {
-    "test": "node pruebas/motor.test.js",
+    "test": "node pruebas/motor.test.js && node pruebas/prompt.test.js",
     "servir": "node pruebas/servidor.js"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-name: Compilar
+﻿name: Compilar
 
 on:
   push:
@@ -11,14 +11,14 @@ permissions:
 
 jobs:
   pruebas:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Pruebas del motor local
-        run: node pruebas/motor.test.js
+        run: node pruebas/motor.test.js && node pruebas/prompt.test.js
       - name: Pruebas de la interfaz en Chrome
         run: node pruebas/interfaz.test.js "$(which google-chrome)" capturas
       - uses: actions/upload-artifact@v4
@@ -29,7 +29,7 @@ jobs:
 
   android:
     needs: pruebas
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,7 +39,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
+      # El runner ya trae el SDK de Android en $ANDROID_HOME
       - name: Instalar Capacitor
         run: npm install
       - name: Crear proyecto Android
@@ -47,15 +47,15 @@ jobs:
           npx cap add android
           npx @capacitor/assets generate --android --assetPath recursos --iconBackgroundColor '#111827' --splashBackgroundColor '#0f141b'
           npx cap sync android
-      - name: Poner número de versión
+      - name: Poner nÃºmero de versiÃ³n
         run: |
           VER=$(node -p "require('./package.json').version")
           sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/; s/versionName \"1.0\"/versionName \"$VER\"/" android/app/build.gradle
           grep -E "versionCode|versionName" android/app/build.gradle
       - name: Compilar APK
         run: cd android && ./gradlew assembleRelease --no-daemon
-      # La llave de firma vive sólo en la PC del dueño: este APK sale SIN firmar
-      # y se firma en local con firmar-apk.ps1, que también lo sube a la versión.
+      # La llave de firma vive sÃ³lo en la PC del dueÃ±o: este APK sale SIN firmar
+      # y se firma en local con firmar-apk.ps1, que tambiÃ©n lo sube a la versiÃ³n.
       - name: Alinear APK sin firmar
         run: |
           BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
@@ -92,15 +92,15 @@ jobs:
   publicar:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [android, windows]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: descargas
-      - name: Crear versión con las descargas
+      - name: Crear versiÃ³n con las descargas
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" descargas/windows/*.exe \
-            --title "Taller Mecánico $GITHUB_REF_NAME" --notes-file docs/COMO-INSTALAR.md
+            --title "Taller MecÃ¡nico $GITHUB_REF_NAME" --notes-file docs/COMO-INSTALAR.md
