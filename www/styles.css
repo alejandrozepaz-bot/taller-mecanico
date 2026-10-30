@@ -70,6 +70,29 @@ label input, label select, label textarea { color: var(--texto); font-size: 1rem
 .recordatorio .sub { grid-column: 1; }
 .recordatorio .btn { grid-column: 2; grid-row: 1 / span 2; }
 .vencido { color: var(--peligro); }
+mark { background: #fde047; color: #111827; border-radius: 3px; padding: 0 2px; }
+.tabla { overflow-x: auto; margin: 8px 0; }
+.tabla table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+.tabla th, .tabla td { border: 1px solid var(--borde); padding: 6px 8px; text-align: left; vertical-align: top; }
+.tabla th { background: var(--panel2); }
+ul.casillas { list-style: none; padding-left: 4px; }
+.capitulo h2 { font-size: 1.15rem; margin: 4px 0 8px; color: var(--acento); }
+.capitulo p { margin: 6px 0; }
+.indice ol { margin: 4px 0; }
+.indice a { text-decoration: none; display: inline-block; padding: 4px 0; }
+.fila-manual { display: flex; flex-direction: column; padding: 10px 2px; border-top: 1px solid var(--borde); color: var(--texto); text-decoration: none; }
+.fila-manual:first-of-type { border-top: 0; }
+.caja > b + .fila-manual { border-top: 0; margin-top: 4px; }
+.marca-pdf { padding: 6px 0; }
+.modelo-pdf { padding-left: 10px; border-left: 3px solid var(--borde); margin: 6px 0; }
+.resultado-manual .info .sub { white-space: normal; }
+.manual-enlace { margin: 4px 4px 0 0; }
+.barra-pdf { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: sticky; top: 0; z-index: 5; }
+.pagina-pdf { display: flex; align-items: center; gap: 6px; color: var(--texto); }
+.pagina-pdf input { width: 76px; margin: 0; text-align: center; }
+.lienzo-pdf { overflow: auto; background: #fff; border-radius: 8px; min-height: 200px; margin: 10px 0; }
+.lienzo-pdf canvas { display: block; }
+.resultado-pdf { display: block; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--borde); color: var(--texto); font: inherit; padding: 10px 2px; cursor: pointer; }
 .en-curso { color: var(--acento); font-weight: 700; }
 .calc .resultado { margin: 4px 0 0; font-size: 1.05rem; }
 blockquote { margin: 6px 0; padding: 8px 12px; border-left: 4px solid var(--acento); background: var(--panel2); border-radius: 6px; }

@@ -1,7 +1,7 @@
 {
   "name": "taller-mecanico-escritorio",
   "productName": "Taller Mecánico",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Taller Mecánico para computadora",
   "author": "Taller Mecánico",
   "main": "main.js",

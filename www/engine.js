@@ -59,6 +59,79 @@ const Motor = (() => {
     return resultados.sort((a, b) => b.puntos - a.puntos).slice(0, 5);
   }
 
+  // ---------- Manuales ----------
+  const manualesTaller = () => (typeof MANUALES !== "undefined" ? MANUALES : []);
+  const manualPorId = id => manualesTaller().find(m => m.id === id);
+
+  // Capítulos de los manuales del taller que hablan de una falla del catálogo.
+  function capitulosDeFalla(idFalla) {
+    const r = [];
+    for (const m of manualesTaller()) m.caps.forEach((c, i) => { if ((c.f || []).includes(idFalla)) r.push({ manual: m, cap: c, i }); });
+    return r;
+  }
+
+  const VACIAS = new Set(["de", "la", "el", "en", "y", "a", "los", "las", "del", "con", "por", "para", "que", "no", "se", "un", "una", "al", "lo", "su", "es", "o"]);
+  const palabrasDe = consulta => [...new Set(normal(consulta).split(/[^a-z0-9ñ.]+/).map(p => p.replace(/^\.+|\.+$/g, "")).filter(p => p.length >= 2 && !VACIAS.has(p)))];
+
+  const cacheNormal = new Map();
+  const normalCache = t => { let n = cacheNormal.get(t); if (n === undefined) { n = normal(t); if (cacheNormal.size > 5000) cacheNormal.clear(); cacheNormal.set(t, n); } return n; };
+
+  // Documentos buscables: cada capítulo de un manual del taller y cada página de cada PDF.
+  function documentos(pdfs, tipo) {
+    const docs = [];
+    for (const m of manualesTaller()) {
+      if (tipo && !aplica(m, tipo)) continue;
+      m.caps.forEach((c, i) => docs.push({ origen: "taller", id: m.id, i, titulo: `${m.n} › ${c.n}`, texto: c.x, ruta: `#/manual/${m.id}/${i}` }));
+    }
+    for (const p of pdfs || []) {
+      if (tipo && p.tipo && p.tipo !== tipo && !(TIPOS[p.tipo] && TIPOS[tipo] && TIPOS[p.tipo].grupo === TIPOS[tipo].grupo)) continue;
+      const meta = [p.titulo, p.marca, p.modelo, p.anios].filter(Boolean).join(" ");
+      (p.texto && p.texto.length ? p.texto : [""]).forEach((t, i) => docs.push({ origen: "pdf", id: p.id, i, pagina: i + 1, titulo: `${p.titulo} · pág. ${i + 1}`, texto: t, meta, ruta: `#/pdf/${p.id}/${i + 1}` }));
+    }
+    return docs;
+  }
+
+  // Busca palabras sin importar acentos. Primero los documentos con TODAS las palabras; más puntos por repeticiones y por estar en el título.
+  function buscarManuales(consulta, { pdfs = [], tipo = null, limite = 30 } = {}) {
+    const palabras = palabrasDe(consulta);
+    if (!palabras.length) return [];
+    const resultados = [];
+    for (const d of documentos(pdfs, tipo)) {
+      const texto = normalCache(d.texto);
+      const titulo = normalCache(d.titulo + " " + (d.meta || ""));
+      let encontradas = 0, puntos = 0, primera = -1;
+      for (const p of palabras) {
+        const enTitulo = buscarInicio(titulo, p, 0) >= 0;
+        let veces = 0, pos = buscarInicio(texto, p, 0);
+        if (pos >= 0 && (primera < 0 || pos < primera)) primera = pos;
+        while (pos >= 0 && veces < 10) { veces++; pos = buscarInicio(texto, p, pos + p.length); }
+        if (veces || enTitulo) encontradas++;
+        puntos += veces + (enTitulo ? 8 : 0);
+      }
+      if (!encontradas) continue;
+      puntos += encontradas === palabras.length ? 100 : encontradas * 10;
+      resultados.push({ ...d, puntos, completo: encontradas === palabras.length, fragmento: fragmento(d.texto, primera) });
+    }
+    return resultados.sort((a, b) => b.puntos - a.puntos).slice(0, limite);
+  }
+
+  // Busca la palabra al inicio de una palabra del texto: "cadena" encuentra "cadenas".
+  // Las palabras cortas (unidades como bar, psi, mm) deben coincidir completas: "bar" no encuentra "barata".
+  function buscarInicio(texto, palabra, desde) {
+    const letra = c => c !== undefined && /[a-z0-9ñ]/.test(c);
+    const completa = palabra.length <= 3;
+    let pos = texto.indexOf(palabra, desde);
+    while (pos >= 0 && (letra(texto[pos - 1]) || (completa && letra(texto[pos + palabra.length])))) pos = texto.indexOf(palabra, pos + 1);
+    return pos;
+  }
+
+  function fragmento(texto, pos) {
+    const limpio = t => t.replace(/[*#|`>\[\]]/g, " ").replace(/\s+/g, " ").trim();
+    if (pos < 0) return limpio(texto.slice(0, 160));
+    const ini = Math.max(0, pos - 70);
+    return (ini > 0 ? "…" : "") + limpio(texto.slice(ini, pos + 130)) + "…";
+  }
+
   // Lo que el taller ha aprendido: { idFalla: { "causa real": veces } } → las causas ordenadas por veces.
   function experiencia(aprendido, idFalla) {
     const conteo = (aprendido || {})[idFalla];
@@ -92,6 +165,11 @@ const Motor = (() => {
       r += "\n**Qué revisar, paso a paso:**\n";
       f.p.forEach((p, i) => (r += `${i + 1}. ${p}\n`));
       if (f.h && f.h.length) r += `\n**Herramientas:** ${f.h.join(", ")}\n`;
+      const caps = capitulosDeFalla(f.id);
+      if (caps.length) {
+        r += "\n**📖 Léelo en el manual:**\n";
+        for (const c of caps.slice(0, 3)) r += `- [${c.manual.n} › ${c.cap.n}](#/manual/${c.manual.id}/${c.i})\n`;
+      }
     }
     if (otras.length) {
       r += "\n### También podría ser\n";
@@ -101,5 +179,5 @@ const Motor = (() => {
     return r;
   }
 
-  return { normal, aplica, fallasPara, porId, buscarCodigos, explicarCodigo, diagnosticar, experiencia, responder };
+  return { normal, aplica, fallasPara, porId, buscarCodigos, explicarCodigo, diagnosticar, experiencia, responder, manualPorId, capitulosDeFalla, palabrasDe, buscarManuales };
 })();

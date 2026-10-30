@@ -12,6 +12,27 @@ const PUERTO = 8123, DEPURA = 9333;
 
 const espera = ms => new Promise(r => setTimeout(r, ms));
 
+// PDF mínimo de verdad (una página por texto) para probar la importación y la búsqueda.
+function crearPdf(paginas) {
+  const objs = [];
+  const n = paginas.length;
+  objs[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objs[2] = `<< /Type /Pages /Kids [${paginas.map((_, i) => `${4 + i * 2} 0 R`).join(" ")}] /Count ${n} >>`;
+  objs[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+  paginas.forEach((t, i) => {
+    const flujo = `BT /F1 18 Tf 50 750 Td (${t}) Tj ET`;
+    objs[4 + i * 2] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + i * 2} 0 R >>`;
+    objs[5 + i * 2] = `<< /Length ${flujo.length} >>\nstream\n${flujo}\nendstream`;
+  });
+  let pdf = "%PDF-1.4\n";
+  const pos = [];
+  for (let k = 1; k < objs.length; k++) { pos[k] = pdf.length; pdf += `${k} 0 obj\n${objs[k]}\nendobj\n`; }
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objs.length}\n0000000000 65535 f \n` + pos.slice(1).map(p => String(p).padStart(10, "0") + " 00000 n \n").join("");
+  pdf += `trailer\n<< /Size ${objs.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf, "latin1");
+}
+
 async function main() {
   const servidor = spawn(process.execPath, [path.join(__dirname, "servidor.js"), String(PUERTO)], { stdio: "ignore" });
   const perfil = fs.mkdtempSync(path.join(os.tmpdir(), "taller-perfil-"));
@@ -28,12 +49,13 @@ async function main() {
     const pagina = objetivos.find(o => o.type === "page");
     const ws = new WebSocket(pagina.webSocketDebuggerUrl);
     await new Promise(r => (ws.onopen = r));
-    let n = 0; const pendientes = {}; const errores = [];
+    let n = 0; const pendientes = {}; const errores = []; const avisos = [];
     ws.onmessage = ev => {
       const m = JSON.parse(ev.data);
       if (m.id && pendientes[m.id]) { pendientes[m.id](m); delete pendientes[m.id]; }
       if (m.method === "Runtime.exceptionThrown") errores.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);
       if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") errores.push(m.params.args.map(a => a.value || a.description).join(" "));
+      if (m.method === "Runtime.consoleAPICalled" && ["warning", "log"].includes(m.params.type)) avisos.push(m.params.args.map(a => a.value || a.description).join(" "));
     };
     const cdp = (method, params = {}) => new Promise(r => { const id = ++n; pendientes[id] = r; ws.send(JSON.stringify({ id, method, params })); });
     const js = async expr => {
@@ -143,6 +165,48 @@ async function main() {
     await foto("10-diagnostico");
     await js(`location.hash='#/ajustes'`); await espera(300); await foto("11-ajustes");
     await js(`location.hash='#/guias'`); await espera(300); await foto("12-guias");
+
+    // ---------- Manuales ----------
+    await js(`sessionStorage.setItem('buscarManual',''); location.hash='#/guias'`); await espera(400);
+    verificar(await js(`return document.body.innerText.includes('Manuales del taller') && document.querySelectorAll('#m-listas .fila-manual').length >= 18`), "lista de manuales del taller por categoría");
+    await foto("13-manuales");
+    await js(`const b=document.querySelector('#m-buscar'); b.value='valvula de alivio'; b.dispatchEvent(new Event('input'));`); await espera(500);
+    verificar(await js(`const r=document.querySelector('#m-resultados .tarjeta'); return !!r && r.getAttribute('href').startsWith('#/manual/mc_hidraulico') && !!document.querySelector('#m-resultados mark')`), "buscador general encuentra el capítulo sin acentos y resalta");
+    await foto("14-buscar-manuales");
+    await js(`document.querySelector('#m-resultados .tarjeta').click()`); await espera(600);
+    verificar(await js(`return location.hash.startsWith('#/manual/mc_hidraulico') && document.querySelectorAll('#mm-texto mark').length > 0 && document.body.innerText.includes('Índice')`), "abre el manual con índice y palabras resaltadas");
+    await foto("15-manual");
+
+    // Agregar un PDF y buscar dentro
+    const rutaPdf = path.join(os.tmpdir(), "Manual-Toyota-8FGU25-prueba.pdf");
+    fs.writeFileSync(rutaPdf, crearPdf(["Indice general Toyota 8FGU25", "Ajuste de la valvula de alivio: 175 bar", "Cadenas de levante"]));
+    await js(`sessionStorage.setItem('buscarManual',''); location.hash='#/guias'`); await espera(400);
+    const docu = await cdp("DOM.getDocument", { depth: -1 });
+    const nodo = await cdp("DOM.querySelector", { nodeId: docu.result.root.nodeId, selector: "#m-pdf" });
+    await cdp("DOM.setFileInputFiles", { nodeId: nodo.result.nodeId, files: [rutaPdf] });
+    await espera(400);
+    verificar(await js(`return !!document.querySelector('#i-guardar')`), "formulario para clasificar el PDF");
+    await js(`const t=document.querySelector('#i-tipo'); t.value='montacargas'; t.dispatchEvent(new Event('change'));
+      document.querySelector('#i-marca').value='Toyota'; document.querySelector('#i-modelo').value='8FGU25'; document.querySelector('#i-guardar').click();`);
+    const inicioPdf = Date.now();
+    for (let i = 0; i < 60 && !(await js(`return !document.querySelector('#i-guardar')`)); i++) await espera(500);
+    const agregado = await js(`return document.querySelector('#m-listas').innerText.includes('Manual-Toyota-8FGU25-prueba') && document.querySelector('#m-listas').innerText.includes('3 pág.')`);
+    verificar(agregado, `PDF agregado y ordenado por marca y modelo (${((Date.now() - inicioPdf) / 1000).toFixed(1)} s)`);
+    if (!agregado) console.log("   progreso:", await js(`return (document.querySelector('#i-progreso')||{}).textContent`), "| avisos:", avisos.slice(-5).join(" | "));
+    await foto("16-mis-pdf");
+    await js(`const b=document.querySelector('#m-buscar'); b.value='175 bar'; b.dispatchEvent(new Event('input'));`); await espera(500);
+    verificar(await js(`return [...document.querySelectorAll('#m-resultados .tarjeta')].some(a=>a.getAttribute('href').endsWith('/2'))`), "busca dentro del PDF y encuentra la página 2");
+    await js(`[...document.querySelectorAll('#m-resultados .tarjeta')].find(a=>a.getAttribute('href').endsWith('/2')).click()`);
+    for (let i = 0; i < 20 && !(await js(`return !!document.querySelector('#pv-lienzo canvas')`)); i++) await espera(500);
+    verificar(await js(`return !!document.querySelector('#pv-lienzo canvas') && document.querySelector('#pv-pag').value==='2' && document.querySelector('#pv-resultados').innerText.includes('Pág. 2')`), "visor abre el PDF en la página encontrada");
+    await foto("17-visor-pdf");
+
+    // El vehículo muestra sus manuales
+    await js(`location.hash='#/p/${id}/guias'`); await espera(400);
+    verificar(await js(`return document.body.innerText.includes('Tus PDF de Toyota 8FGU25') && document.body.innerText.includes('Manuales del taller para estas fallas')`), "el proyecto muestra sus PDF y capítulos");
+    await foto("18-proyecto-manuales");
+    await js(`location.hash='#/p/${id}/fallas'`); await espera(300);
+    verificar(await js(`return !!document.querySelector('.manual-enlace')`), "cada falla enlaza a su capítulo del manual");
 
     verificar(errores.length === 0, "sin errores en consola" + (errores.length ? ": " + errores.join(" | ") : ""));
     ws.close();

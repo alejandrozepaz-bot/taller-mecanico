@@ -1,4 +1,4 @@
-# Prompt maestro: app "Taller Mecánico" (v3)
+# Prompt maestro: app "Taller Mecánico" (v4)
 
 > **Cómo usarlo:** copia todo este documento y pégalo en una IA que programe (Claude Code u otra). Está escrito para que construya la app completa, la pruebe y la deje lista para descargar sin tener que preguntar casi nada.
 > Las secciones **[MEGA]** son la siguiente fase. El historial de mejoras de este prompt está en `prompts/HISTORIAL.md`.
@@ -36,6 +36,7 @@ Construye **"Taller Mecánico"**, una aplicación para **un mecánico que repara
 2. Una bodega manda un **montacargas Toyota 8FGU25 de gas que no sube el mástil con carga**. Sin señal en la bodega, el motor local le da causas y pasos con la advertencia de seguridad. Mide la presión, la anota, agrega el filtro de succión como pieza usada y cronometra 1 h 40 min de trabajo.
 3. Un caso raro: **Crown eléctrico con un código del controlador**. Ya con internet, le pregunta al Maestro IA con foto de la pantalla. La IA lee la bitácora y no repite pruebas ya hechas.
 4. Meses después, cuando otro montacargas "no sube", la app le dice: **"En tu taller esta falla ha sido: Filtro de succión tapado (3 veces)"**.
+5. En la bodega sin señal necesita la presión de la válvula de alivio del 8FGU25: escribe "válvula de alivio" en **Manuales** y la app le muestra el capítulo del manual del taller y la **página exacta del PDF de Toyota** que descargó semanas antes.
 
 ---
 
@@ -57,7 +58,8 @@ Construye **"Taller Mecánico"**, una aplicación para **un mecánico que repara
 | Capa | Tecnología | Por qué |
 |---|---|---|
 | App | HTML + CSS + JavaScript **sin frameworks ni dependencias** | Ligera y fácil de mantener |
-| Datos | **IndexedDB** (`proyectos` y `kv`: chat general, biblioteca, aprendido) + `localStorage` (ajustes) | Sin internet y aguanta fotos |
+| Datos | **IndexedDB** v2 (`proyectos`; `kv`: chat general, biblioteca, aprendido; `manuales`: datos y texto de cada PDF; `archivos`: el PDF como Blob) + `localStorage` (ajustes) | Sin internet; aguanta fotos y PDFs grandes |
+| PDF | **pdf.js 3.11.174** guardado en `www/vendor/` (sin CDN), cargado sólo al usarlo, con `isEvalSupported: false` | Leer y buscar PDFs sin internet, también en Android (su WebView no trae visor de PDF) |
 | Offline | **Service Worker** con caché versionado (`taller-vX.Y.Z`) | Abre sin señal |
 | Android | **Capacitor 7** (`webDir: www`, `androidScheme: https`) + `@capacitor/share` y `@capacitor/filesystem` | Mismo código dentro de un APK |
 | Windows | **Electron** + `electron-builder` (`nsis` + `portable`), enlaces externos al navegador del sistema | Instalador y versión USB |
@@ -66,8 +68,9 @@ Construye **"Taller Mecánico"**, una aplicación para **un mecánico que repara
 
 ### 3.1 Carpetas
 ```
-www/            index.html, styles.css, data.js (conocimiento), engine.js (motor local),
-                db.js (IndexedDB), ai.js (Maestro IA), app.js (interfaz), sw.js, manifest, íconos
+www/            index.html, styles.css, data.js (conocimiento), manuales.js (manuales del taller),
+                engine.js (motor local y buscador), db.js (IndexedDB), ai.js (Maestro IA),
+                app.js (interfaz), sw.js, manifest, íconos, vendor/ (pdf.js)
 escritorio/     main.js y package.json de Electron
 pruebas/        motor.test.js, prompt.test.js, interfaz.test.js, servidor.js
 prompts/        PROMPT-APP.md, PROMPT-MAESTRO-IA.md, HISTORIAL.md
@@ -117,14 +120,21 @@ Falla del catálogo = {
   h: [herramientas], d: 1-3, w?: advertencia de seguridad
 }
 
+Manual del taller = { id, c: categoría, t: "a"|"m"|"x", n: nombre,
+  caps: [{ n: título, x: texto en markdown (tablas, listas, casillas - [ ]), f?: [ids de fallas] }] }
+
+Manual PDF = { id, titulo, tipo?, categoria, marca, modelo, anios, paginas, tamano, nombreArchivo,
+  texto: ["texto de la página 1", ...], sinTexto: bool (escaneado), creado }   // el archivo va aparte en "archivos"
+
 Respaldo (JSON) = { app: "taller-mecanico", version, fecha, ajustes: { taller }, proyectos, biblioteca, aprendido }
+// Los PDF NO van en el respaldo (pesan mucho): el usuario conserva los archivos originales.
 ```
 
 ---
 
 ## 5. Pantallas (detalle exacto)
 
-Barra inferior fija: **Proyectos · Diagnóstico · Maestro · Guías · Ajustes**.
+Barra inferior fija: **Proyectos · Diagnóstico · Maestro · Manuales · Ajustes**.
 
 ### 5.1 Proyectos (inicio)
 - Nombre del taller y "N vehículo(s) en el taller"; botón **"＋ Nuevo proyecto"**.
@@ -143,9 +153,9 @@ Barra inferior fija: **Proyectos · Diagnóstico · Maestro · Guías · Ajustes
 Encabezado con ←, ícono, título, placas/serie · cliente y selector de **estado** (cada cambio se anota solo). Al pasar a **Entregado** sin próximo servicio, pregunta "¿Cuándo le toca el próximo servicio?" (1, 3, 6 o 12 meses, o una fecha) y lo anota como "Recordatorio".
 
 - **Datos:** contadores; **cronómetro** ▶ Iniciar / ⏸ Pausar (al pausar anota "Trabajo: 45 min (total 2 h 10 min)"); **piezas usadas** (nombre, n.º de parte, cantidad; cada una se anota en la bitácora); ficha; editar; 📞 llamar; 💬 WhatsApp (agrega 52 a números de 10 dígitos) con el estado; 🧾 reporte; 🗑 borrar con confirmación.
-- **Fallas:** por falla: causa real (si ya se resolvió), advertencia, **"📈 En tu taller ha sido…"**, causas, pasos con casillas (contador x/y), herramientas; botones Marcar resuelta / Anotar / Preguntar / Quitar. Al marcar resuelta aparece la ventana **"¿Cuál fue la causa real?"** con las causas del catálogo y un campo libre (se puede omitir). Las fallas escritas a mano muestran sugerencias del motor local para agregarlas.
+- **Fallas:** por falla: causa real (si ya se resolvió), advertencia, **"📈 En tu taller ha sido…"**, causas, pasos con casillas (contador x/y), herramientas, **botones 📖 a los capítulos del manual** que tratan esa falla; botones Marcar resuelta / Anotar / Preguntar / Quitar. Al marcar resuelta aparece la ventana **"¿Cuál fue la causa real?"** con las causas del catálogo y un campo libre (se puede omitir). Las fallas escritas a mano muestran sugerencias del motor local para agregarlas.
 - **Bitácora:** chips de tipo (Nota, Diagnóstico, Prueba/medición, Pieza cambiada, Reparación, Pendiente, Foto), texto, 📷 foto (cámara trasera, 1024 px, JPEG 72 %), 🎤 dictado si el equipo lo soporta (si no, el botón no aparece), línea de tiempo, foto en grande, borrar entrada.
-- **Guías:** por falla, búsqueda con "marca modelo año falla" en YouTube, manual de servicio, ManualsLib, diagramas y foros; códigos OBD2 encontrados en la bitácora (enlace a obd-codes.com); temas del vehículo; charm.li para coches de 1982 a 2013; enlaces guardados. Aviso si no hay internet.
+- **Guías:** primero **"📖 En los manuales (sin internet)"**: los PDF del usuario de la misma marca y modelo (sin importar mayúsculas, acentos ni espacios: "8FGU 25" = "8fgu25") y los capítulos del manual del taller de sus fallas. Después, por falla, búsqueda con "marca modelo año falla" en YouTube, manual de servicio, ManualsLib, diagramas y foros; códigos OBD2 encontrados en la bitácora (enlace a obd-codes.com); temas del vehículo; charm.li para coches de 1982 a 2013; enlaces guardados. Aviso si no hay internet.
 - **Maestro:** chat del proyecto (sección 7).
 
 ### 5.4 Diagnóstico (sin internet)
@@ -154,9 +164,17 @@ Encabezado con ←, ícono, título, placas/serie · cliente y selector de **est
 - **🧮 Calculadoras** (sección 6.3).
 - Catálogo completo por sistema.
 
-### 5.5 Maestro (general), 5.6 Guías (general), 5.7 Ajustes
+### 5.5 Manuales (todo sin internet)
+- Encabezado: "N del taller · N PDF tuyos".
+- **Buscador general** que busca a la vez en los capítulos de los manuales del taller y en cada página de los PDF; chips de tipo (Todos · Coche/camioneta · Montacargas). Resultados como tarjetas: 📘 o 📄, "Manual › Capítulo" o "PDF · pág. N", fragmento con las palabras **resaltadas**. Al tocar uno se abre justo ahí, con las palabras resaltadas.
+- **📘 Manuales del taller** agrupados por categoría (Eléctrico y diagnóstico, Motor, Combustible, Enfriamiento, Frenos, Suspensión, Transmisión, Diésel, A/C, Montacargas, Mantenimiento preventivo).
+- **📄 Mis manuales PDF:** botón **"＋ Agregar PDF"** (uno o varios) → formulario: título, tipo, categoría (Manual de servicio, de partes, Diagrama eléctrico, Diagrama hidráulico, Manual del operador, Códigos de falla, Boletín técnico, Otro), marca (sugerencias), modelo, años → lee el texto página por página mostrando "leyendo página X de N" → guarda. Lista ordenada **tipo → marca → modelo → título** (alfabético), con categoría, páginas, tamaño y "🖼 escaneado" si no tiene texto.
+- **🌐 Buscar en internet:** búsqueda libre, sitios de confianza (charm.li, ManualsLib, obd-codes.com, YouTube) y biblioteca de enlaces.
+- **Ver manual del taller** (`#/manual/id/capítulo`): índice con enlaces, buscador interno con contador de coincidencias, capítulos numerados con tablas y casillas, "Fallas relacionadas", aviso de que son valores típicos.
+- **Visor de PDF** (`#/pdf/id/página`): ◀ página / total ▶, ir a página, zoom − ＋ (se recuerda), buscador interno con la lista de páginas que tienen la palabra, editar datos, borrar. Dibuja la página en un `canvas` del ancho de la pantalla (nítido en pantallas de alta densidad) y reutiliza el documento abierto al cambiar de página.
+
+### 5.6 Maestro (general), 5.7 Ajustes
 - Maestro general: el mismo chat sin proyecto, con "Borrar chat".
-- Guías: búsqueda libre, sitios de confianza y biblioteca personal.
 - Ajustes: nombre del taller; llave de la IA (oculta) con **Probar llave**; motor (Automático / Sólo local); exportar respaldo (Android: menú nativo de compartir; PC: descarga); importar (suma la experiencia aprendida en vez de reemplazarla); borrar todo (pedir escribir "BORRAR"); instalar (si el navegador lo ofrece); versión y tamaño de la base.
 
 ---
@@ -188,7 +206,7 @@ Encabezado con ←, ícono, título, placas/serie · cliente y selector de **est
 1. Normaliza: minúsculas y sin acentos.
 2. Por cada falla que aplique al tipo: +3 + (palabras de la frase) por cada palabra clave encontrada; +1 por cada palabra de más de 3 letras que aparezca en el nombre; +5 si el texto trae un código que la falla tiene como palabra clave.
 3. Devuelve las 5 con más puntos.
-4. Respuesta: códigos explicados → "Lo más probable" → advertencia → **"En tu taller esta falla ha sido: …"** (experiencia aprendida, 3 causas más frecuentes) → causas → pasos → herramientas → "También podría ser" → **"Siguiente paso"**.
+4. Respuesta: códigos explicados → "Lo más probable" → advertencia → **"En tu taller esta falla ha sido: …"** (experiencia aprendida, 3 causas más frecuentes) → causas → pasos → herramientas → **"📖 Léelo en el manual"** (enlaces a los capítulos) → "También podría ser" → **"Siguiente paso"**.
 5. Si no hay coincidencias: explica cómo describir la falla y sugiere el Maestro IA.
 
 ### 6.3 Calculadoras (fórmulas exactas)
@@ -205,7 +223,15 @@ Encabezado con ←, ícono, título, placas/serie · cliente y selector de **est
 
 En las conversiones de dos campos, el que se escribe manda y el otro se limpia.
 
-### 6.4 Aprendizaje del taller
+### 6.4 Manuales del taller y buscador
+- **18 manuales propios con 66 capítulos** (escritos para la app; los manuales de fábrica tienen derechos de autor y no se incluyen), de 2 a 5 capítulos cada uno:
+  Multímetro y diagnóstico eléctrico · Batería, arranque y carga · Escáner OBD2 · Encendido y compresión · Inyección y sensores · Enfriamiento · Frenos · Suspensión, dirección y llantas · Transmisión y clutch · Diésel · Aire acondicionado · **Montacargas:** seguridad e inspección diaria · sistema hidráulico · mástil, cadenas y horquillas · eléctrico (batería de tracción y controlador) · gas LP · transmisión, frenos y dirección · Mantenimiento preventivo (por km y por horas).
+- Cada capítulo lista las fallas del catálogo que trata (`f`); una prueba verifica que existan. Hoy 65 de las 74 fallas tienen al menos un capítulo; faltan fuga y presión de aceite, ruido de motor, banda de tiempo, arranque en frío, olor a gasolina, se va de lado al frenar, fuga de escape y side shift (siguiente versión).
+- **Buscador** (`Motor.buscarManuales`): cada capítulo y cada página de PDF es un documento; quita acentos y palabras vacías (de, la, el…); la palabra debe estar **al inicio de una palabra** del texto ("cadena" encuentra "cadenas") y las de 3 letras o menos deben coincidir completas ("bar" no encuentra "barata"); puntos: +100 si están todas las palabras, +8 si están en el título o en marca/modelo, +1 por cada aparición (máx. 10); fragmento de ~200 letras alrededor de la primera coincidencia; filtro por tipo de vehículo.
+- El resaltado usa la misma regla, sin importar acentos ("valvula" resalta "válvula").
+- El texto de los manuales sólo admite enlaces internos `#/…` (nunca enlaces externos ni HTML).
+
+### 6.5 Aprendizaje del taller
 - Al resolver una falla del catálogo con causa real, suma 1 en `aprendido[idFalla][causa]` (IndexedDB).
 - Se muestra en la pestaña Fallas y en las respuestas del motor local.
 - Se exporta en el respaldo y al importar **se suma**.
@@ -262,15 +288,19 @@ Los enlaces se abren fuera de la app: en Android con el navegador del sistema y 
 - Cronómetro corriendo al cerrar la app → al volver sigue contando bien.
 - Respaldo de otra app o JSON roto → "Ese archivo no es un respaldo válido".
 - Fotos grandes (12 MP) → se comprimen antes de guardar.
+- PDF escaneado (sólo imágenes) → se guarda y se ve, pero se marca "🖼 escaneado" y el buscador interno se desactiva con una explicación.
+- PDF dañado o con contraseña → "No se pudo agregar …" sin romper los demás del lote.
+- Espacio lleno al guardar un PDF → mensaje claro (la transacción se cancela sin dejar datos a medias).
+- Modelo escrito distinto en el PDF y en el proyecto ("8FGU 25" vs "8fgu25") → igual se relacionan.
 - Teléfono de 10 dígitos → WhatsApp con 52 al inicio.
 
 ---
 
 ## 11. Pruebas y criterios de aceptación
 
-- **`motor.test.js`:** ids únicos, sistemas y tipos válidos, cada tipo con más de 30 fallas, "el mástil no sube con carga" → *Mástil no sube*, "se calienta mucho" → *Sobrecalentamiento*, coche sin fallas de montacargas, acentos, códigos conocidos y desconocidos, texto sin sentido → ayuda, experiencia del taller ordenada por veces.
+- **`motor.test.js`:** ids únicos, sistemas y tipos válidos, cada tipo con más de 30 fallas, "el mástil no sube con carga" → *Mástil no sube*, "se calienta mucho" → *Sobrecalentamiento*, coche sin fallas de montacargas, acentos, códigos conocidos y desconocidos, texto sin sentido → ayuda, experiencia del taller ordenada por veces, manuales bien formados con fallas existentes, buscador ("valvula de alivio presion" → manual hidráulico; "bar" no encuentra "barata"; página correcta de un PDF), el Maestro local enlaza el capítulo.
 - **`prompt.test.js`:** el prompt de `ai.js` es idéntico al documentado.
-- **`interfaz.test.js`** (Chrome o Edge sin ventana vía protocolo DevTools, pantalla de 412 × 915): crear un montacargas Toyota 8FGU25, sugerencias de modelos, sugerencias desde texto libre, palomear un paso, nota en bitácora, cambio de estado, cronómetro, pieza, resolver con causa real, entregar → próximo servicio → recordatorio con WhatsApp, guías con YouTube del modelo, código detectado en bitácora, Maestro local con experiencia, persistencia al recargar, OBD2, calculadoras de torque y horquillas, **cero errores en consola**. Guarda capturas.
+- **`interfaz.test.js`** (Chrome o Edge sin ventana vía protocolo DevTools, pantalla de 412 × 915): crear un montacargas Toyota 8FGU25, sugerencias de modelos, sugerencias desde texto libre, palomear un paso, nota en bitácora, cambio de estado, cronómetro, pieza, resolver con causa real, entregar → próximo servicio → recordatorio con WhatsApp, lista de manuales, buscador general con resaltado, abrir capítulo, **agregar un PDF real de 3 páginas generado por la prueba** (con `DOM.setFileInputFiles`), buscar "175 bar" → página 2 → el visor dibuja el `canvas` en esa página, el proyecto muestra su PDF y capítulos, guías con YouTube del modelo, código detectado en bitácora, Maestro local con experiencia, persistencia al recargar, OBD2, calculadoras de torque y horquillas, **cero errores en consola**. Guarda capturas.
 - **CI:** si una prueba falla, no se compila nada.
 - **Prueba manual en celular real** (pendiente cada versión): instalar APK, tomar foto, exportar respaldo, abrir un enlace de YouTube, usar sin datos móviles.
 
@@ -298,6 +328,8 @@ Los enlaces se abren fuera de la app: en Android con el navegador del sistema y 
 10. **Realidad aumentada:** apuntar la cámara al motor y marcar componentes.
 11. **Catálogo que crece:** compartir (opcional y anónimo) la experiencia aprendida entre talleres.
 12. **Escanear VIN y placas con la cámara** para llenar marca, modelo y año.
+13. **OCR para PDFs escaneados:** reconocer el texto de las páginas-imagen (Tesseract.js guardado en la app) para poder buscar en ellos.
+14. **Marcadores y notas en los PDF:** guardar "pág. 214 = torques de cabeza" por modelo y enlazarlos desde la bitácora.
 
 ---
 
@@ -311,7 +343,8 @@ Los enlaces se abren fuera de la app: en Android con el navegador del sistema y 
 | 4 | Offline (service worker, manifest, íconos) | Abrir sin red tras la primera carga |
 | 5 | Android + Windows + GitHub Actions + firma local | Corrida verde; APK firmado y `.exe` en el Release |
 | 6 | Calculadoras, cronómetro, piezas, aprendizaje, recordatorios de servicio | Pruebas ampliadas en verde |
-| 7 | [MEGA] | Una función a la vez, cada una con sus pruebas |
+| 7 | Manuales: 18 del taller + PDFs del usuario con buscador y visor | Pruebas del buscador y de importar/abrir un PDF real |
+| 8 | [MEGA] | Una función a la vez, cada una con sus pruebas |
 
 ---
 

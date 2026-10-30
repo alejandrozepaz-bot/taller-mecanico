@@ -28,6 +28,14 @@ Cada versión está guardada en el historial de Git, así que puedes ver los cam
 - **11 casos límite**, pruebas detalladas con su lista de verificación, proceso para publicar una versión y tabla de fases.
 - Correcciones descubiertas al construir: los emojis de camioneta y montacargas no existen en Windows (por eso los íconos son SVG) y la respuesta de la IA puede traer bloques de razonamiento vacíos (por eso sólo se leen los bloques de texto).
 
+### v4: manuales sin internet
+- **18 manuales del taller** propios (eléctrico, motor, inyección, enfriamiento, frenos, suspensión, transmisión, diésel, A/C, 6 de montacargas y mantenimiento), divididos en capítulos y enlazados a las fallas.
+- **Manuales PDF del usuario:** se agregan desde el equipo, se clasifican (tipo, categoría, marca, modelo, años), se ordenan tipo → marca → modelo y se busca dentro de cada página.
+- **Buscador general** con reglas exactas (inicio de palabra, palabras cortas completas, puntos, fragmento, resaltado sin acentos) y **visor de PDF** propio (Android no trae uno).
+- pdf.js guardado dentro de la app con la protección contra PDFs maliciosos.
+- Nuevas historias, casos límite (escaneados, dañados, disco lleno, modelo escrito distinto), pruebas y funciones MEGA (OCR y marcadores).
+- Por qué no se incluyen manuales de fábrica: tienen derechos de autor; la app ayuda a guardar y buscar los que el usuario descarga.
+
 ## PROMPT-MAESTRO-IA.md (el "cerebro" del chat)
 
 ### v1

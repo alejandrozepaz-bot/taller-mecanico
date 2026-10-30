@@ -1,6 +1,6 @@
 // Guarda la app en el equipo para que abra sin internet.
-const CACHE = "taller-v1.2.0";
-const ARCHIVOS = ["./", "index.html", "styles.css", "data.js", "engine.js", "db.js", "ai.js", "app.js", "manifest.webmanifest", "icono.svg", "icono-192.png", "icono-512.png"];
+const CACHE = "taller-v1.3.0";
+const ARCHIVOS = ["./", "index.html", "styles.css", "data.js", "manuales.js", "engine.js", "db.js", "ai.js", "app.js", "manifest.webmanifest", "icono.svg", "icono-192.png", "icono-512.png", "vendor/pdf.min.js", "vendor/pdf.worker.min.js"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARCHIVOS)).then(() => self.skipWaiting()));

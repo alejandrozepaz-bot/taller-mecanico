@@ -1,6 +1,6 @@
 // Interfaz de la app del taller. Vanilla JS, sin dependencias, funciona sin internet.
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const $ = s => document.querySelector(s);
 const vista = () => $("#vista");
 
@@ -9,6 +9,7 @@ let ajustes = { llave: "", taller: "Mi Taller", motorPreferido: "auto" };
 let borrador = null;     // proyecto que se está creando
 let chatGeneral = [];
 let aprendido = {};      // { idFalla: { "causa real": veces } }
+let pdfsCache = [];      // datos y texto de los manuales PDF del usuario (sin el archivo)
 let pensando = false;
 
 // ---------- utilidades ----------
@@ -21,12 +22,29 @@ const nombreFalla = f => (f.id && Motor.porId(f.id) ? Motor.porId(f.id).n : f.te
 
 function markdown(texto) {
   const lineas = esc(texto).split("\n");
-  let html = "", lista = null;
-  const cerrar = () => { if (lista) { html += `</${lista}>`; lista = null; } };
-  const enLinea = s => s.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\*(.+?)\*/g, "<i>$1</i>").replace(/`(.+?)`/g, "<code>$1</code>");
+  let html = "", lista = null, tabla = null;
+  const cerrar = () => {
+    if (lista) { html += `</${lista}>`; lista = null; }
+    if (tabla) {
+      const [cab, ...filas] = tabla;
+      html += `<div class="tabla"><table><thead><tr>${cab.map(c => `<th>${enLinea(c)}</th>`).join("")}</tr></thead><tbody>${filas.map(f => `<tr>${f.map(c => `<td>${enLinea(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+      tabla = null;
+    }
+  };
+  // Sólo se permiten enlaces internos (#/...): el texto puede venir de la IA o de un PDF.
+  const enLinea = s => s.replace(/\[([^\]]+)\]\((#\/[^)\s"]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\*(.+?)\*/g, "<i>$1</i>").replace(/`(.+?)`/g, "<code>$1</code>");
   for (const l of lineas) {
     let m;
-    if ((m = l.match(/^#{1,4}\s+(.*)/))) { cerrar(); html += `<h4>${enLinea(m[1])}</h4>`; }
+    if (/^\s*\|/.test(l)) {
+      if (lista) { html += `</${lista}>`; lista = null; }
+      if (/^\s*\|[\s|:-]+\|\s*$/.test(l)) continue; // fila separadora |---|
+      (tabla = tabla || []).push(l.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim()));
+      continue;
+    }
+    if (tabla) cerrar();
+    if ((m = l.match(/^\s*[-*]\s+\[( |x)\]\s+(.*)/i))) { if (lista !== "ul class=\"casillas\"") { cerrar(); html += '<ul class="casillas">'; lista = 'ul class="casillas"'; } html += `<li>${m[1].trim() ? "☑" : "☐"} ${enLinea(m[2])}</li>`; }
+    else if ((m = l.match(/^#{1,4}\s+(.*)/))) { cerrar(); html += `<h4>${enLinea(m[1])}</h4>`; }
     else if ((m = l.match(/^\s*\d+[.)]\s+(.*)/))) { if (lista !== "ol") { cerrar(); html += "<ol>"; lista = "ol"; } html += `<li>${enLinea(m[1])}</li>`; }
     else if ((m = l.match(/^\s*[-•*]\s+(.*)/))) { if (lista !== "ul") { cerrar(); html += "<ul>"; lista = "ul"; } html += `<li>${enLinea(m[1])}</li>`; }
     else if ((m = l.match(/^&gt;\s?(.*)/))) { cerrar(); html += `<blockquote>${enLinea(m[1])}</blockquote>`; }
@@ -34,8 +52,38 @@ function markdown(texto) {
     else { cerrar(); html += `<p>${enLinea(l)}</p>`; }
   }
   cerrar();
-  return html;
+  return html.replace(/<\/ul class="casillas">/g, "</ul>");
 }
+
+// Resalta las palabras buscadas (sin importar acentos) dentro de un elemento ya pintado.
+function patronBusqueda(palabras) {
+  const variantes = { a: "aáàä", e: "eéèë", i: "iíìï", o: "oóòö", u: "uúùü", n: "nñ" };
+  const partes = palabras.filter(p => p.length >= 2).map(p => [...p].map(ch => variantes[ch] ? `[${variantes[ch]}]` : ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("") + (p.length <= 3 ? "(?![\\p{L}\\p{N}])" : ""));
+  // Sólo al inicio de una palabra, igual que el buscador del motor.
+  return partes.length ? new RegExp(`(?<![\\p{L}\\p{N}])(${partes.join("|")})`, "giu") : null;
+}
+
+function marcarEn(elemento, palabras) {
+  const patron = patronBusqueda(palabras);
+  if (!patron || !elemento) return 0;
+  const nodos = [];
+  const recorrido = document.createTreeWalker(elemento, NodeFilter.SHOW_TEXT);
+  while (recorrido.nextNode()) if (recorrido.currentNode.nodeValue.trim()) nodos.push(recorrido.currentNode);
+  let total = 0;
+  for (const n of nodos) {
+    patron.lastIndex = 0;
+    if (!patron.test(n.nodeValue)) continue;
+    const span = document.createElement("span");
+    span.innerHTML = esc(n.nodeValue).replace(patron, m => (total++, `<mark>${m}</mark>`));
+    n.replaceWith(...span.childNodes);
+  }
+  return total;
+}
+
+const resaltarTexto = (texto, palabras) => {
+  const patron = patronBusqueda(palabras);
+  return patron ? esc(texto).replace(patron, "<mark>$1</mark>") : esc(texto);
+};
 
 function aviso(texto) {
   const t = $("#aviso");
@@ -127,9 +175,12 @@ function ir(ruta) { location.hash = ruta; }
 
 function enrutar() {
   const partes = location.hash.replace(/^#\/?/, "").split("/");
-  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("activo", a.dataset.ruta === (partes[0] || "")));
+  const seccion = ["manual", "pdf"].includes(partes[0]) ? "guias" : partes[0] || "";
+  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("activo", a.dataset.ruta === seccion));
   window.scrollTo(0, 0);
   switch (partes[0]) {
+    case "manual": return pantallaManual(partes[1], partes[2]);
+    case "pdf": return pantallaPdf(partes[1], partes[2]);
     case "nuevo": return pantallaNuevo();
     case "p": return pantallaProyecto(partes[1], partes[2] || "resumen");
     case "diagnostico": return pantallaDiagnostico();
@@ -579,7 +630,8 @@ function tabFallas(p) {
         <h4>Causas probables</h4><ol>${info.c.map(c => `<li>${esc(c)}</li>`).join("")}</ol>
         <h4>Revisión paso a paso <span class="sub">(${hechos}/${info.p.length})</span></h4>
         ${info.p.map((paso, j) => `<label class="check"><input type="checkbox" data-check="${f.id}-${j}" ${p.checks[`${f.id}-${j}`] ? "checked" : ""}> ${esc(paso)}</label>`).join("")}
-        ${info.h ? `<p class="sub">🧰 ${esc(info.h.join(", "))}</p>` : ""}`;
+        ${info.h ? `<p class="sub">🧰 ${esc(info.h.join(", "))}</p>` : ""}
+        ${Motor.capitulosDeFalla(f.id).map(c => `<a class="btn sec chico manual-enlace" href="#/manual/${c.manual.id}/${c.i}">📖 ${esc(c.cap.n)}</a>`).join(" ")}`;
     } else {
       const sug = Motor.diagnosticar(f.texto, p.tipo).slice(0, 3);
       cuerpo = (f.causaReal ? `<div class="exito">✔ Causa real: <b>${esc(f.causaReal)}</b></div>` : "") + `<p class="sub">Falla escrita por ti.</p>` + (sug.length ?
@@ -749,9 +801,18 @@ function tabGuias(p) {
     ["manual de servicio", "diagrama hidráulico", "códigos de falla", "manual de partes", "ajuste de válvula de alivio"] :
     ["manual de servicio", "diagrama eléctrico", "ubicación de fusibles", "torques", "afinación"];
   const codigos = Motor.buscarCodigos((p.bitacora || []).map(b => b.texto).join(" ") + " " + (p.fallas || []).map(f => f.texto || "").join(" "));
+  // Manuales sin internet: capítulos del taller para sus fallas y PDFs de la misma marca y modelo.
+  const capitulos = [];
+  for (const f of p.fallas || []) for (const c of f.id ? Motor.capitulosDeFalla(f.id) : []) if (!capitulos.some(x => x.manual.id === c.manual.id && x.i === c.i)) capitulos.push(c);
+  const mismo = (a, b) => !a || !b || Motor.normal(a).replace(/\s/g, "") === Motor.normal(b).replace(/\s/g, "");
+  const pdfsVehiculo = pdfsCache.filter(x => x.marca && mismo(x.marca, p.marca) && mismo(x.modelo, p.modelo) && (!x.tipo || TIPOS[x.tipo].grupo === TIPOS[p.tipo].grupo));
   $("#contenido").innerHTML = `
-    ${navigator.onLine ? "" : `<div class="alerta">Sin internet: los enlaces se abrirán cuando tengas señal. La guía paso a paso de cada falla sí funciona sin internet (pestaña Fallas).</div>`}
-    <h3>Por cada falla</h3>
+    ${navigator.onLine ? "" : `<div class="alerta">Sin internet: los enlaces de internet se abrirán cuando tengas señal. Los manuales de abajo sí funcionan sin internet.</div>`}
+    <h3>📖 En los manuales (sin internet)</h3>
+    ${pdfsVehiculo.length ? `<div class="caja"><b>📄 Tus PDF de ${esc(p.marca)} ${esc(p.modelo)}</b>${pdfsVehiculo.map(x => `<a class="fila-manual" href="#/pdf/${x.id}"><span>📄 ${esc(x.titulo)}</span><span class="sub">${esc(x.categoria)} · ${x.paginas} pág.</span></a>`).join("")}</div>` :
+      `<p class="sub">No tienes PDFs de ${esc(p.marca)} ${esc(p.modelo)}. Descárgalos con los botones de abajo y agrégalos en <a href="#/guias">Manuales</a>.</p>`}
+    ${capitulos.length ? `<div class="caja"><b>📘 Manuales del taller para estas fallas</b>${capitulos.map(c => `<a class="fila-manual" href="#/manual/${c.manual.id}/${c.i}"><span>📘 ${esc(c.cap.n)}</span><span class="sub">${esc(c.manual.n)}</span></a>`).join("")}</div>` : ""}
+    <h3>🌐 Por cada falla (internet)</h3>
     ${(p.fallas || []).map(f => {
       const q = `${base}${esMc ? " montacargas" : ""} ${nombreFalla(f)}`;
       return `<div class="caja"><b>${esc(nombreFalla(f))}</b><div class="enlaces">${botonesSitios(q)}</div></div>`;
@@ -966,10 +1027,320 @@ function activarCalculadoras() {
   };
 }
 
-// ---------- GUÍAS GENERALES ----------
+// ---------- MANUALES ----------
+const CATEGORIAS_PDF = ["Manual de servicio", "Manual de partes", "Diagrama eléctrico", "Diagrama hidráulico", "Manual del operador", "Códigos de falla", "Boletín técnico", "Otro"];
+const tamano = b => b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
+const tituloPdf = p => [p.marca, p.modelo, p.anios].filter(Boolean).join(" ");
+
+// pdf.js se carga sólo cuando se necesita (pesa ~1.3 MB).
+let promesaPdfJs = null;
+function cargarPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return promesaPdfJs = promesaPdfJs || new Promise((ok, mal) => {
+    const s = document.createElement("script");
+    s.src = "vendor/pdf.min.js";
+    s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdf.worker.min.js"; ok(window.pdfjsLib); };
+    s.onerror = () => { promesaPdfJs = null; mal(new Error("No se pudo cargar el lector de PDF")); };
+    document.head.appendChild(s);
+  });
+}
+
+// isEvalSupported:false evita que un PDF malicioso ejecute código (CVE-2024-4367).
+async function abrirDocumentoPdf(datos) {
+  const pdfjs = await cargarPdfJs();
+  return pdfjs.getDocument({ data: datos, isEvalSupported: false }).promise;
+}
+
 function pantallaGuias() {
+  const q = sessionStorage.getItem("buscarManual") || "";
+  const tipo = sessionStorage.getItem("tipoManual") || "";
   vista().innerHTML = `
-    <header class="titulo"><div><h1>📚 Guías y manuales</h1><p class="sub">Busca videos y manuales de cualquier vehículo</p></div></header>
+    <header class="titulo"><div><h1>📚 Manuales</h1><p class="sub">${MANUALES.length} del taller · ${pdfsCache.length} PDF tuyos · todo funciona sin internet</p></div></header>
+    <input id="m-buscar" type="search" placeholder="Buscar en todos los manuales: válvula de alivio, P0171, cadenas…" value="${esc(q)}">
+    <div class="chips" id="m-tipo">${[["", "Todos"], ["coche", "Coche / camioneta"], ["montacargas", "Montacargas"]].map(([id, n]) => `<button class="chip ${tipo === id ? "sel" : ""}" data-t="${id}">${n}</button>`).join("")}</div>
+    <div id="m-resultados"></div>
+    <div id="m-listas"></div>`;
+  const pintar = () => {
+    const consulta = $("#m-buscar").value.trim();
+    const t = sessionStorage.getItem("tipoManual") || "";
+    sessionStorage.setItem("buscarManual", consulta);
+    $("#m-listas").classList.toggle("oculto", !!consulta);
+    if (!consulta) { $("#m-resultados").innerHTML = ""; return; }
+    const r = Motor.buscarManuales(consulta, { pdfs: pdfsCache, tipo: t || null });
+    const palabras = Motor.palabrasDe(consulta);
+    $("#m-resultados").innerHTML = r.length ? `<p class="sub">${r.length} resultado(s)${r.some(x => !x.completo) ? " · primero los que tienen todas las palabras" : ""}</p>` + r.map(x => `
+      <a class="tarjeta resultado-manual" href="${x.ruta}" data-q="${esc(consulta)}">
+        <div class="icono">${x.origen === "pdf" ? "📄" : "📘"}</div>
+        <div class="info"><b>${resaltarTexto(x.titulo, palabras)}</b><span class="sub">${resaltarTexto(x.fragmento, palabras)}</span></div>
+      </a>`).join("") : `<div class="vacio"><p>No encontré "${esc(consulta)}" en los manuales.</p><p class="sub">Prueba con menos palabras o búscalo en internet abajo.</p></div>`;
+  };
+  $("#m-resultados").onclick = e => { const a = e.target.closest("[data-q]"); if (a) sessionStorage.setItem("resaltar", a.dataset.q); };
+  let espera;
+  $("#m-buscar").oninput = () => { clearTimeout(espera); espera = setTimeout(pintar, 200); };
+  $("#m-tipo").onclick = e => {
+    const b = e.target.closest("[data-t]"); if (!b) return;
+    sessionStorage.setItem("tipoManual", b.dataset.t);
+    document.querySelectorAll("#m-tipo .chip").forEach(c => c.classList.toggle("sel", c === b));
+    pintar(); pintarListas();
+  };
+  const pintarListas = () => {
+    const t = sessionStorage.getItem("tipoManual") || "";
+    // Manuales del taller por categoría
+    const grupos = {};
+    for (const m of MANUALES) if (!t || Motor.aplica(m, t)) (grupos[m.c] = grupos[m.c] || []).push(m);
+    // PDF por tipo → marca → modelo
+    const arbol = {};
+    for (const p of pdfsCache) {
+      if (t && p.tipo && TIPOS[p.tipo].grupo !== TIPOS[t].grupo) continue;
+      const g = p.tipo ? TIPOS[p.tipo].nombre : "General";
+      const marca = p.marca || "Sin marca", modelo = p.modelo || "Todos los modelos";
+      ((arbol[g] = arbol[g] || {})[marca] = arbol[g][marca] || {});
+      (arbol[g][marca][modelo] = arbol[g][marca][modelo] || []).push(p);
+    }
+    const orden = o => Object.keys(o).sort((a, b) => a.localeCompare(b, "es"));
+    $("#m-listas").innerHTML = `
+      <h3>📘 Manuales del taller</h3>
+      ${Object.keys(CATEGORIAS_MANUAL).filter(c => grupos[c]).map(c => `
+        <details class="caja" ${t ? "open" : ""}><summary><b>${CATEGORIAS_MANUAL[c]}</b> <span class="sub">(${grupos[c].length})</span></summary>
+          ${grupos[c].map(m => `<a class="fila-manual" href="#/manual/${m.id}"><span>📘 ${esc(m.n)}</span><span class="sub">${m.caps.length} cap. · ${m.t === "m" ? "Montacargas" : m.t === "a" ? "Coche/camioneta" : "Todos"}</span></a>`).join("")}
+        </details>`).join("")}
+      <h3>📄 Mis manuales PDF</h3>
+      <div class="acciones izq"><label class="btn">＋ Agregar PDF<input type="file" accept="application/pdf,.pdf" multiple id="m-pdf" hidden></label></div>
+      <p class="sub">Descarga los manuales (por ejemplo de charm.li o ManualsLib) y agrégalos aquí: se guardan en este equipo, se ordenan por marca y modelo, y puedes buscar dentro de su texto sin internet.</p>
+      <div id="m-importar"></div>
+      ${orden(arbol).map(g => `<details class="caja" open><summary><b>${esc(g)}</b></summary>
+        ${orden(arbol[g]).map(marca => `<div class="marca-pdf"><b>${esc(marca)}</b>
+          ${orden(arbol[g][marca]).map(modelo => `<div class="modelo-pdf"><span class="sub">${esc(modelo)}</span>
+            ${arbol[g][marca][modelo].sort((a, b) => a.titulo.localeCompare(b.titulo, "es")).map(p => `<a class="fila-manual" href="#/pdf/${p.id}"><span>📄 ${esc(p.titulo)}</span><span class="sub">${esc(p.categoria)} · ${p.paginas} pág. · ${tamano(p.tamano)}${p.anios ? " · " + esc(p.anios) : ""}${p.sinTexto ? " · 🖼 escaneado" : ""}</span></a>`).join("")}
+          </div>`).join("")}
+        </div>`).join("")}
+      </details>`).join("") || `<p class="sub">Todavía no agregas PDFs.</p>`}
+      <h3>🌐 Buscar en internet</h3>
+      <div id="internet"></div>`;
+    $("#m-pdf").onchange = e => formularioPdf([...e.target.files]);
+    pintarInternet($("#internet"));
+  };
+  pintarListas();
+  pintar();
+}
+
+// Formulario para clasificar los PDF que se van a agregar.
+function formularioPdf(archivos) {
+  if (!archivos.length) return;
+  const caja = $("#m-importar");
+  const tipos = Object.entries(TIPOS);
+  caja.innerHTML = `<div class="caja">
+    <h3>Agregar ${archivos.length} PDF</h3>
+    <p class="sub">${archivos.map(a => esc(a.name) + " (" + tamano(a.size) + ")").join("<br>")}</p>
+    ${archivos.length === 1 ? `<label>Título<input id="i-titulo" value="${esc(archivos[0].name.replace(/\.pdf$/i, ""))}"></label>` : ""}
+    <div class="dos">
+      <label>Tipo<select id="i-tipo"><option value="">General (todos)</option>${tipos.map(([id, t]) => `<option value="${id}">${t.nombre}</option>`).join("")}</select></label>
+      <label>Categoría<select id="i-cat">${CATEGORIAS_PDF.map(c => `<option>${c}</option>`).join("")}</select></label>
+    </div>
+    <div class="dos">
+      <label>Marca<input id="i-marca" list="i-marcas" placeholder="Ej. Toyota"><datalist id="i-marcas"></datalist></label>
+      <label>Modelo<input id="i-modelo" placeholder="Ej. 8FGU25 (vacío = todos)"></label>
+    </div>
+    <label>Años (opcional)<input id="i-anios" placeholder="Ej. 2010-2016"></label>
+    <div class="acciones"><button class="btn sec" id="i-cancelar">Cancelar</button><button class="btn" id="i-guardar">Guardar</button></div>
+    <p id="i-progreso" class="sub"></p>
+  </div>`;
+  const marcas = () => {
+    const t = $("#i-tipo").value;
+    const lista = t ? Object.keys(MARCAS[t]) : [...new Set(Object.values(MARCAS).flatMap(Object.keys))];
+    $("#i-marcas").innerHTML = lista.filter(m => m !== "Otra").map(m => `<option value="${esc(m)}">`).join("");
+  };
+  $("#i-tipo").onchange = marcas; marcas();
+  caja.scrollIntoView({ behavior: "smooth" });
+  $("#i-cancelar").onclick = () => (caja.innerHTML = "");
+  $("#i-guardar").onclick = async () => {
+    const boton = $("#i-guardar"); boton.disabled = true;
+    const datos = { tipo: $("#i-tipo").value, categoria: $("#i-cat").value, marca: $("#i-marca").value.trim(), modelo: $("#i-modelo").value.trim(), anios: $("#i-anios").value.trim() };
+    let hechos = 0;
+    for (const archivo of archivos) {
+      try {
+        const info = await importarPdf(archivo, { ...datos, titulo: (archivos.length === 1 && $("#i-titulo").value.trim()) || archivo.name.replace(/\.pdf$/i, "") },
+          (n, total) => ($("#i-progreso").textContent = `${archivo.name}: leyendo página ${n} de ${total}…`));
+        pdfsCache.push(info); hechos++;
+      } catch (e) {
+        aviso(`No se pudo agregar ${archivo.name}: ${e.message}`);
+      }
+    }
+    if (hechos) aviso(`${hechos} manual(es) agregado(s)`);
+    pantallaGuias();
+  };
+}
+
+// Lee el texto de cada página para poder buscar sin internet, y guarda el PDF en el equipo.
+async function importarPdf(archivo, datos, progreso) {
+  const bytes = new Uint8Array(await archivo.arrayBuffer());
+  const doc = await abrirDocumentoPdf(bytes.slice());
+  const texto = [];
+  for (let n = 1; n <= doc.numPages; n++) {
+    if (n === 1 || n % 5 === 0) progreso(n, doc.numPages);
+    const pagina = await doc.getPage(n);
+    const contenido = await pagina.getTextContent();
+    texto.push(contenido.items.map(i => i.str + (i.hasEOL ? "\n" : " ")).join("").replace(/[ \t]+/g, " ").trim());
+    pagina.cleanup();
+  }
+  await doc.destroy();
+  // Menos de ~20 letras por página en promedio = PDF escaneado (sólo imágenes): no se puede buscar dentro.
+  const letras = texto.join("").replace(/\s/g, "").length;
+  const info = {
+    id: nuevoId(), ...datos, paginas: texto.length, tamano: archivo.size, nombreArchivo: archivo.name,
+    texto, sinTexto: letras < 20 * texto.length, creado: Date.now(),
+  };
+  await DB.guardarPdf(info, new Blob([bytes], { type: "application/pdf" }));
+  return info;
+}
+
+// ---------- Ver un manual del taller ----------
+function pantallaManual(id, cap) {
+  const m = Motor.manualPorId(id);
+  if (!m) { vista().innerHTML = `<div class="vacio"><p>No encontré ese manual.</p><a class="btn" href="#/guias">Volver</a></div>`; return; }
+  const resaltar = sessionStorage.getItem("resaltar") || "";
+  sessionStorage.removeItem("resaltar");
+  vista().innerHTML = `
+    <header class="titulo proyecto-cab">
+      <a class="btn sec chico" href="#/guias">←</a>
+      <div class="info"><h1>📘 ${esc(m.n)}</h1><span class="sub">${CATEGORIAS_MANUAL[m.c]} · ${m.t === "m" ? "Montacargas" : m.t === "a" ? "Coche y camioneta" : "Todos los vehículos"}</span></div>
+    </header>
+    <input id="mm-buscar" type="search" placeholder="Buscar en este manual…" value="${esc(resaltar)}">
+    <p id="mm-conteo" class="sub"></p>
+    <details class="caja indice" open><summary><b>Índice</b></summary>
+      <ol>${m.caps.map((c, i) => `<li><a href="#/manual/${m.id}/${i}">${esc(c.n)}</a></li>`).join("")}</ol>
+    </details>
+    <div id="mm-texto">${m.caps.map((c, i) => `
+      <section class="caja capitulo" id="cap-${i}">
+        <h2>${i + 1}. ${esc(c.n)}</h2>
+        ${markdown(c.x.trim())}
+        ${(c.f || []).length ? `<p class="sub">Fallas relacionadas: ${c.f.map(f => esc((Motor.porId(f) || {}).n || f)).join(" · ")}</p>` : ""}
+      </section>`).join("")}</div>
+    <p class="sub centro">Manual del taller: valores típicos de referencia. El dato exacto de cada modelo está en su manual de servicio.</p>`;
+  const buscar = () => {
+    const cont = $("#mm-texto");
+    cont.querySelectorAll("mark").forEach(mk => mk.replaceWith(mk.textContent));
+    cont.normalize();
+    const q = $("#mm-buscar").value.trim();
+    const n = q ? marcarEn(cont, Motor.palabrasDe(q)) : 0;
+    $("#mm-conteo").textContent = q ? (n ? `${n} coincidencia(s)` : "Sin coincidencias en este manual") : "";
+    return n;
+  };
+  let espera;
+  $("#mm-buscar").oninput = () => { clearTimeout(espera); espera = setTimeout(() => { if (buscar()) { const mk = $("#mm-texto mark"); mk && mk.scrollIntoView({ block: "center" }); } }, 250); };
+  const n = resaltar ? buscar() : 0;
+  const destino = cap !== undefined && cap !== "" ? document.getElementById("cap-" + cap) : null;
+  requestAnimationFrame(() => {
+    const mk = n && destino ? destino.querySelector("mark") : null;
+    if (mk) mk.scrollIntoView({ block: "center" });
+    else if (destino) destino.scrollIntoView({ block: "start" });
+  });
+}
+
+// ---------- Ver un PDF ----------
+let pdfAbierto = null; // { id, doc } se reutiliza para no volver a leer el archivo al cambiar de página
+
+async function pantallaPdf(id, pagina) {
+  const info = pdfsCache.find(p => p.id === id);
+  if (!info) { vista().innerHTML = `<div class="vacio"><p>No encontré ese PDF.</p><a class="btn" href="#/guias">Volver</a></div>`; return; }
+  const resaltar = sessionStorage.getItem("resaltar") || "";
+  sessionStorage.removeItem("resaltar");
+  let actual = Math.min(Math.max(1, +pagina || 1), info.paginas);
+  let zoom = +(sessionStorage.getItem("zoomPdf") || 1);
+  vista().innerHTML = `
+    <header class="titulo proyecto-cab">
+      <a class="btn sec chico" href="#/guias">←</a>
+      <div class="info"><h1>📄 ${esc(info.titulo)}</h1><span class="sub">${esc([tituloPdf(info), info.categoria, info.paginas + " pág."].filter(Boolean).join(" · "))}</span></div>
+    </header>
+    <div class="caja barra-pdf">
+      <button class="btn sec chico" id="pv-ant" aria-label="Página anterior">◀</button>
+      <label class="pagina-pdf"><input id="pv-pag" type="number" inputmode="numeric" min="1" max="${info.paginas}" value="${actual}"> / ${info.paginas}</label>
+      <button class="btn sec chico" id="pv-sig" aria-label="Página siguiente">▶</button>
+      <button class="btn sec chico" id="pv-menos" aria-label="Alejar">−</button>
+      <button class="btn sec chico" id="pv-mas" aria-label="Acercar">＋</button>
+    </div>
+    <input id="pv-buscar" type="search" placeholder="${info.sinTexto ? "Este PDF es escaneado: no tiene texto para buscar" : "Buscar en este PDF…"}" value="${esc(resaltar)}" ${info.sinTexto ? "disabled" : ""}>
+    <div id="pv-resultados"></div>
+    <div id="pv-lienzo" class="lienzo-pdf"><p class="sub centro">Abriendo…</p></div>
+    <div class="acciones izq">
+      <button class="btn sec" id="pv-editar">✏️ Datos</button>
+      <button class="btn peligro" id="pv-borrar">🗑 Borrar PDF</button>
+    </div>
+    <div id="pv-form"></div>`;
+  try {
+    if (!pdfAbierto || pdfAbierto.id !== id) {
+      if (pdfAbierto) pdfAbierto.doc.destroy();
+      const archivo = await DB.archivoPdf(id);
+      if (!archivo) throw new Error("el archivo no está en el equipo");
+      pdfAbierto = { id, doc: await abrirDocumentoPdf(new Uint8Array(await archivo.arrayBuffer())) };
+    }
+  } catch (e) {
+    $("#pv-lienzo").innerHTML = `<div class="alerta">No se pudo abrir el PDF: ${esc(e.message)}</div>`;
+    return;
+  }
+  let tarea = null;
+  const pintar = async () => {
+    $("#pv-pag").value = actual;
+    history.replaceState(null, "", `#/pdf/${id}/${actual}`);
+    const pag = await pdfAbierto.doc.getPage(actual);
+    const ancho = $("#pv-lienzo").clientWidth || 360;
+    const escala = (ancho / pag.getViewport({ scale: 1 }).width) * zoom;
+    const vp = pag.getViewport({ scale: escala });
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const lienzo = document.createElement("canvas");
+    lienzo.width = Math.floor(vp.width * dpr); lienzo.height = Math.floor(vp.height * dpr);
+    lienzo.style.width = Math.floor(vp.width) + "px"; lienzo.style.height = Math.floor(vp.height) + "px";
+    if (tarea) tarea.cancel();
+    tarea = pag.render({ canvasContext: lienzo.getContext("2d"), viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null });
+    try { await tarea.promise; } catch (e) { return; } // cancelado por otro cambio de página
+    $("#pv-lienzo").replaceChildren(lienzo);
+  };
+  const ir = n => { actual = Math.min(Math.max(1, n), info.paginas); pintar(); };
+  $("#pv-ant").onclick = () => ir(actual - 1);
+  $("#pv-sig").onclick = () => ir(actual + 1);
+  $("#pv-pag").onchange = e => ir(+e.target.value || 1);
+  $("#pv-menos").onclick = () => { zoom = Math.max(0.5, zoom - 0.25); sessionStorage.setItem("zoomPdf", zoom); pintar(); };
+  $("#pv-mas").onclick = () => { zoom = Math.min(3, zoom + 0.25); sessionStorage.setItem("zoomPdf", zoom); pintar(); };
+  const buscar = () => {
+    const q = $("#pv-buscar").value.trim();
+    if (!q) { $("#pv-resultados").innerHTML = ""; return; }
+    const r = Motor.buscarManuales(q, { pdfs: [info] }).filter(x => x.origen === "pdf" && x.texto).sort((a, b) => (b.completo - a.completo) || (a.pagina - b.pagina));
+    const palabras = Motor.palabrasDe(q);
+    $("#pv-resultados").innerHTML = r.length ? `<details class="caja" open><summary><b>${r.length} página(s) con "${esc(q)}"</b></summary>${r.map(x => `<button class="resultado-pdf" data-p="${x.pagina}"><b>Pág. ${x.pagina}</b> <span class="sub">${resaltarTexto(x.fragmento, palabras)}</span></button>`).join("")}</details>` : `<p class="sub">No aparece "${esc(q)}" en este PDF.</p>`;
+  };
+  let espera;
+  $("#pv-buscar").oninput = () => { clearTimeout(espera); espera = setTimeout(buscar, 250); };
+  $("#pv-resultados").onclick = e => { const b = e.target.closest("[data-p]"); if (b) { ir(+b.dataset.p); $("#pv-lienzo").scrollIntoView({ block: "start" }); } };
+  $("#pv-borrar").onclick = async () => {
+    if (!confirm(`¿Borrar "${info.titulo}" de este equipo?`)) return;
+    await DB.borrarPdf(id);
+    pdfsCache = pdfsCache.filter(p => p.id !== id);
+    if (pdfAbierto && pdfAbierto.id === id) { pdfAbierto.doc.destroy(); pdfAbierto = null; }
+    aviso("PDF borrado"); location.hash = "#/guias";
+  };
+  $("#pv-editar").onclick = () => {
+    $("#pv-form").innerHTML = `<div class="caja">
+      <label>Título<input id="e-titulo" value="${esc(info.titulo)}"></label>
+      <div class="dos">
+        <label>Tipo<select id="e-tipo"><option value="">General (todos)</option>${Object.entries(TIPOS).map(([k, t]) => `<option value="${k}" ${info.tipo === k ? "selected" : ""}>${t.nombre}</option>`).join("")}</select></label>
+        <label>Categoría<select id="e-cat">${CATEGORIAS_PDF.map(c => `<option ${info.categoria === c ? "selected" : ""}>${c}</option>`).join("")}</select></label>
+      </div>
+      <div class="dos"><label>Marca<input id="e-marca" value="${esc(info.marca || "")}"></label><label>Modelo<input id="e-modelo" value="${esc(info.modelo || "")}"></label></div>
+      <label>Años<input id="e-anios" value="${esc(info.anios || "")}"></label>
+      <div class="acciones"><button class="btn" id="e-guardar">Guardar</button></div></div>`;
+    $("#e-guardar").onclick = async () => {
+      Object.assign(info, { titulo: $("#e-titulo").value.trim() || info.titulo, tipo: $("#e-tipo").value, categoria: $("#e-cat").value, marca: $("#e-marca").value.trim(), modelo: $("#e-modelo").value.trim(), anios: $("#e-anios").value.trim() });
+      await DB.guardarPdf(info);
+      aviso("Datos guardados"); pantallaPdf(id, actual);
+    };
+  };
+  await pintar();
+  if (resaltar) buscar();
+}
+
+// ---------- Búsqueda en internet (dentro de Manuales) ----------
+function pintarInternet(cont) {
+  cont.innerHTML = `
     <div class="caja">
       <div class="dos"><input id="g-veh" placeholder="Vehículo: Nissan Versa 2015 / Hyster H50FT"><input id="g-tema" placeholder="Tema: cambio de bomba de agua"></div>
       <div class="acciones"><button class="btn" id="g-ir">Buscar</button></div>
@@ -1033,7 +1404,7 @@ function pantallaAjustes() {
     <div class="acciones"><button class="btn grande" id="a-guardar">Guardar ajustes</button></div>
     <div class="caja">
       <h3>💾 Respaldo</h3>
-      <p class="sub">Tus proyectos viven en este equipo. Haz un respaldo seguido y guárdalo en otro lado.</p>
+      <p class="sub">Tus proyectos viven en este equipo. Haz un respaldo seguido y guárdalo en otro lado. Los manuales PDF no van en el respaldo (pesan mucho): guarda también los archivos originales.</p>
       <div class="acciones izq">
         <button class="btn sec" id="a-exportar">⬇ Exportar respaldo</button>
         <label class="btn sec">⬆ Importar respaldo<input type="file" accept="application/json,.json" id="a-importar" hidden></label>
@@ -1064,7 +1435,7 @@ function pantallaAjustes() {
   $("#a-vaciar").onclick = async () => {
     if (!confirm("¿Borrar TODOS los proyectos? Haz un respaldo antes.")) return;
     if (prompt('Escribe BORRAR para confirmar') !== "BORRAR") return;
-    await DB.vaciar(); proyectos = []; chatGeneral = []; aprendido = {}; aviso("Todo borrado"); ir("/");
+    await DB.vaciar(); proyectos = []; chatGeneral = []; aprendido = {}; pdfsCache = []; aviso("Todo borrado"); ir("/");
   };
   const bi = $("#a-instalar");
   if (bi) bi.onclick = async () => { if (!window.eventoInstalar) return; window.eventoInstalar.prompt(); window.eventoInstalar = null; };
@@ -1118,6 +1489,7 @@ async function iniciar() {
     proyectos = (await DB.todos()) || [];
     chatGeneral = (await DB.leer("chatGeneral")) || [];
     aprendido = (await DB.leer("aprendido")) || {};
+    pdfsCache = (await DB.pdfs()) || [];
   } catch (e) { aviso("No se pudo abrir el almacenamiento local"); }
   window.addEventListener("hashchange", enrutar);
   window.addEventListener("online", () => aviso("🌐 Con internet: Maestro IA disponible"));

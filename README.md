@@ -5,6 +5,7 @@ App para mecánicos de **coches, camionetas y montacargas**. Funciona **sin inte
 - **Proyectos**: cada vehículo que llega, con tipo, marca, modelo, año, placas/serie, km u horómetro y cliente.
 - **Fallas**: catálogo de más de 70 fallas (incluye hidráulico, mástil, batería de tracción y gas LP de montacargas) con causas, pasos de revisión con casillas, herramientas y advertencias de seguridad.
 - **Bitácora**: notas, mediciones, piezas cambiadas y fotos, con fecha y hora.
+- **Manuales sin internet**: 18 manuales del taller por capítulos (incluye 6 de montacargas) y tus propios PDF ordenados por tipo → marca → modelo, con buscador dentro del texto y visor de PDF.
 - **Guías**: búsquedas directas en YouTube, manuales de servicio, ManualsLib, diagramas y foros para el modelo exacto.
 - **Maestro**: asistente experto. Con internet usa IA (Claude); sin internet usa el **motor local**.
 - **Diagnóstico rápido**, buscador de **códigos OBD2** y **8 calculadoras** (Ohm, torque, presión, temperatura, distancia, cilindro hidráulico, cadenas y horquillas de montacargas).
@@ -25,7 +26,9 @@ Instrucciones: [docs/COMO-INSTALAR.md](docs/COMO-INSTALAR.md)
 |---|---|
 | `www/` | La app (HTML, CSS, JS sin dependencias). Es la misma para Android, PC y web. |
 | `www/data.js` | Base de conocimiento: marcas, modelos, fallas, códigos OBD2. |
-| `www/engine.js` | Motor local de diagnóstico (sin internet). |
+| `www/manuales.js` | Los 18 manuales del taller (capítulos en texto). |
+| `www/engine.js` | Motor local de diagnóstico y buscador de manuales (sin internet). |
+| `www/vendor/` | pdf.js 3.11.174 para leer y buscar en los PDF sin internet. |
 | `www/ai.js` | Maestro IA en línea (Claude) y su prompt. |
 | `escritorio/` | Versión Windows (Electron). |
 | `prompts/` | Prompt maestro de la app y prompt del Maestro IA, con su historial de mejoras. |
