@@ -15,9 +15,8 @@ App para mecánicos de **coches, camionetas y montacargas**. Funciona **sin inte
 - **Respaldo** para exportar e importar.
 
 ## Descargar
-Ve a **Releases** → la versión más nueva → **Assets**:
-- `Taller-Mecanico.apk` → Android
-- `Taller-Mecanico-Instalador-x.x.x.exe` / `Taller-Mecanico-Portable-x.x.x.exe` → Windows
+- 📱 **Android:** [Taller-Mecanico.apk](https://github.com/alejandrozepaz-bot/taller-mecanico/releases/latest/download/Taller-Mecanico.apk)
+- 💻 **Windows:** instalador o portable en la [versión más nueva](https://github.com/alejandrozepaz-bot/taller-mecanico/releases/latest) → **Assets**
 
 Instrucciones: [docs/COMO-INSTALAR.md](docs/COMO-INSTALAR.md)
 

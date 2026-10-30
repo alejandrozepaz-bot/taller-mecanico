@@ -102,5 +102,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" descargas/windows/*.exe \
-            --title "Taller Mecánico $GITHUB_REF_NAME" --notes-file docs/COMO-INSTALAR.md
+          # Si la versión ya existe (etiqueta vuelta a subir), sólo reemplaza los .exe.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" descargas/windows/*.exe --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" descargas/windows/*.exe \
+              --title "Taller Mecánico $GITHUB_REF_NAME" --notes-file docs/COMO-INSTALAR.md
+          fi
