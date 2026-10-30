@@ -1,4 +1,4 @@
-# Firma el APK que compiló GitHub con la llave que vive SOLO en esta PC (carpeta firma\),
+﻿# Firma el APK que compiló GitHub con la llave que vive SOLO en esta PC (carpeta firma\),
 # lo copia al Escritorio y lo sube a la versión (Release) de GitHub.
 # Uso:  powershell -ExecutionPolicy Bypass -File firmar-apk.ps1 [-Etiqueta v1.0.0]
 param([string]$Etiqueta)
@@ -26,7 +26,8 @@ if ($LASTEXITCODE) { throw "No se pudo descargar el APK" }
 $salida = Join-Path $tmp "Taller-Mecanico.apk"
 & $apksigner sign --ks $llave --ks-key-alias taller --ks-pass "pass:$clave" --out $salida (Join-Path $tmp "Taller-Mecanico-sin-firmar.apk")
 if ($LASTEXITCODE) { throw "Falló la firma" }
-& $apksigner verify $salida
+# Las advertencias de META-INF que imprime apksigner son normales en apps Android; sólo importa el código de salida.
+& $apksigner verify $salida 2>&1 | Out-Null
 if ($LASTEXITCODE) { throw "La firma no se pudo verificar" }
 
 Copy-Item $salida "$env:USERPROFILE\Desktop\Taller-Mecanico.apk" -Force
