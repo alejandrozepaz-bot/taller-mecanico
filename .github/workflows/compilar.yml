@@ -1,4 +1,4 @@
-﻿name: Compilar
+name: Compilar
 
 on:
   push:
@@ -47,15 +47,15 @@ jobs:
           npx cap add android
           npx @capacitor/assets generate --android --assetPath recursos --iconBackgroundColor '#111827' --splashBackgroundColor '#0f141b'
           npx cap sync android
-      - name: Poner nÃºmero de versiÃ³n
+      - name: Poner número de versión
         run: |
           VER=$(node -p "require('./package.json').version")
           sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/; s/versionName \"1.0\"/versionName \"$VER\"/" android/app/build.gradle
           grep -E "versionCode|versionName" android/app/build.gradle
       - name: Compilar APK
         run: cd android && ./gradlew assembleRelease --no-daemon
-      # La llave de firma vive sÃ³lo en la PC del dueÃ±o: este APK sale SIN firmar
-      # y se firma en local con firmar-apk.ps1, que tambiÃ©n lo sube a la versiÃ³n.
+      # La llave de firma vive sólo en la PC del dueño: este APK sale SIN firmar
+      # y se firma en local con firmar-apk.ps1, que también lo sube a la versión.
       - name: Alinear APK sin firmar
         run: |
           BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
@@ -98,9 +98,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: descargas
-      - name: Crear versiÃ³n con las descargas
+      - name: Crear versión con las descargas
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" descargas/windows/*.exe \
-            --title "Taller MecÃ¡nico $GITHUB_REF_NAME" --notes-file docs/COMO-INSTALAR.md
+            --title "Taller Mecánico $GITHUB_REF_NAME" --notes-file docs/COMO-INSTALAR.md
