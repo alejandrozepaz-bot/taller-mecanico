@@ -1,0 +1,111 @@
+name: Compilar
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Pruebas del motor local
+        run: node pruebas/motor.test.js
+      - name: Pruebas de la interfaz en Chrome
+        run: node pruebas/interfaz.test.js "$(which google-chrome)" capturas
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capturas
+          path: capturas
+
+  android:
+    needs: pruebas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: Instalar Capacitor
+        run: npm install
+      - name: Crear proyecto Android
+        run: |
+          npx cap add android
+          npx @capacitor/assets generate --android --assetPath recursos --iconBackgroundColor '#111827' --splashBackgroundColor '#0f141b'
+          npx cap sync android
+      - name: Poner número de versión
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/; s/versionName \"1.0\"/versionName \"$VER\"/" android/app/build.gradle
+          grep -E "versionCode|versionName" android/app/build.gradle
+      - name: Compilar APK
+        run: cd android && ./gradlew assembleRelease --no-daemon
+      - name: Firmar APK
+        env:
+          FIRMA_BASE64: ${{ secrets.FIRMA_BASE64 }}
+          FIRMA_CLAVE: ${{ secrets.FIRMA_CLAVE }}
+        run: |
+          echo "$FIRMA_BASE64" | base64 -d > firma.jks
+          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          "$BT/zipalign" -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk alineado.apk
+          "$BT/apksigner" sign --ks firma.jks --ks-pass env:FIRMA_CLAVE --ks-key-alias taller --out Taller-Mecanico.apk alineado.apk
+          "$BT/apksigner" verify --print-certs Taller-Mecanico.apk
+          rm firma.jks
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: Taller-Mecanico.apk
+
+  windows:
+    needs: pruebas
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Copiar la app web
+        shell: bash
+        run: |
+          cp -r www escritorio/app
+          mkdir -p escritorio/recursos
+          cp recursos/icon.png escritorio/recursos/icon.png
+      - name: Compilar instalador y portable
+        working-directory: escritorio
+        run: |
+          npm install
+          npx electron-builder --win nsis portable --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: escritorio/dist/*.exe
+
+  publicar:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: descargas
+      - name: Crear versión con las descargas
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" descargas/android/*.apk descargas/windows/*.exe \
+            --title "Taller Mecánico $GITHUB_REF_NAME" --notes-file docs/COMO-INSTALAR.md

@@ -1,0 +1,20 @@
+{
+  "name": "taller-mecanico",
+  "version": "1.0.0",
+  "private": true,
+  "description": "App para mecánicos de coches, camionetas y montacargas: proyectos, diagnóstico, bitácora y Maestro IA. Funciona sin internet.",
+  "scripts": {
+    "test": "node pruebas/motor.test.js",
+    "servir": "node pruebas/servidor.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/filesystem": "^7.0.0",
+    "@capacitor/share": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.0.0"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "taller-mecanico-escritorio",
+  "productName": "Taller Mecánico",
+  "version": "1.0.0",
+  "description": "Taller Mecánico para computadora",
+  "author": "Taller Mecánico",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "iniciar": "electron .",
+    "compilar": "electron-builder --win nsis portable --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "mx.tallermecanico.escritorio",
+    "productName": "Taller Mecánico",
+    "files": ["main.js", "app/**/*"],
+    "directories": { "output": "dist", "buildResources": "recursos" },
+    "win": { "icon": "recursos/icon.png" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "shortcutName": "Taller Mecánico", "artifactName": "Taller-Mecanico-Instalador-${version}.exe" },
+    "portable": { "artifactName": "Taller-Mecanico-Portable-${version}.exe" }
+  }
+}

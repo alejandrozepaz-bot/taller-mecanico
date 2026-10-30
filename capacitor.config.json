@@ -1,0 +1,7 @@
+{
+  "appId": "mx.tallermecanico.app",
+  "appName": "Taller Mecánico",
+  "webDir": "www",
+  "server": { "androidScheme": "https" },
+  "android": { "allowMixedContent": false }
+}

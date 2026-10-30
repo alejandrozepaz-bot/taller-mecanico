@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Taller Mecánico</title>
+  <meta name="description" content="Proyectos, diagnóstico, bitácora y Maestro IA para mecánicos de coches, camionetas y montacargas. Funciona sin internet.">
+  <meta name="theme-color" content="#111827">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icono.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icono-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="vista"></main>
+  <nav>
+    <a href="#/" data-ruta=""><span>🔧</span>Proyectos</a>
+    <a href="#/diagnostico" data-ruta="diagnostico"><span>🔍</span>Diagnóstico</a>
+    <a href="#/maestro" data-ruta="maestro"><span>🧠</span>Maestro</a>
+    <a href="#/guias" data-ruta="guias"><span>📚</span>Guías</a>
+    <a href="#/ajustes" data-ruta="ajustes"><span>⚙️</span>Ajustes</a>
+  </nav>
+  <div id="aviso" role="status"></div>
+  <script src="data.js"></script>
+  <script src="engine.js"></script>
+  <script src="db.js"></script>
+  <script src="ai.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

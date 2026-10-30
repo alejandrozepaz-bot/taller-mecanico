@@ -1,0 +1,11 @@
+node_modules/
+android/
+escritorio/app/
+escritorio/dist/
+escritorio/recursos/
+capturas/
+firma/
+*.jks
+*.keystore
+*.apk
+.env
