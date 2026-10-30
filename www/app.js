@@ -1,6 +1,6 @@
 // Interfaz de la app del taller. Vanilla JS, sin dependencias, funciona sin internet.
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const $ = s => document.querySelector(s);
 const vista = () => $("#vista");
 
@@ -72,6 +72,15 @@ const duracion = ms => {
   const min = Math.round(ms / 60000);
   return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${min % 60} min`;
 };
+// Fechas "AAAA-MM-DD" de los campos date, sin que la zona horaria las mueva un día.
+const fechaLocal = s => { const [a, m, d] = s.split("-").map(Number); return new Date(a, m - 1, d); };
+const fechaCorta = s => fechaLocal(s).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
+const diasPara = s => Math.round((fechaLocal(s) - new Date(new Date().toDateString())) / 86400000);
+const sumarMeses = n => {
+  const d = new Date(); d.setMonth(d.getMonth() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const OPCIONES_SERVICIO = [["En 1 mes", 1], ["En 3 meses", 3], ["En 6 meses", 6], ["En 1 año", 12]];
 const tiempoTotal = p => ((p.tiempo && p.tiempo.total) || 0) + (p.tiempo && p.tiempo.inicio ? Date.now() - p.tiempo.inicio : 0);
 
 function comprimirFoto(archivo, maximo = 1024) {
@@ -141,6 +150,7 @@ function pantallaInicio() {
       <div><h1>${esc(ajustes.taller)}</h1><p class="sub">${activos} vehículo(s) en el taller</p></div>
       <button class="btn grande" onclick="ir('/nuevo')">＋ Nuevo proyecto</button>
     </header>
+    ${htmlRecordatorios()}
     <input id="buscar" type="search" placeholder="Buscar por marca, modelo, placas, cliente…" value="${esc(texto)}">
     <div class="chips" id="filtros">
       ${[["activos", "En el taller"], ["todos", "Todos"], ...ESTADOS.map(e => [e.id, e.nombre])].map(([id, n]) =>
@@ -165,6 +175,25 @@ function pantallaInicio() {
     pintar();
   };
   pintar();
+}
+
+// Servicios vencidos o que tocan en los próximos 31 días.
+function htmlRecordatorios() {
+  const lista = proyectos.filter(p => p.proxFecha && diasPara(p.proxFecha) <= 31).sort((a, b) => a.proxFecha.localeCompare(b.proxFecha));
+  if (!lista.length) return "";
+  return `<details class="caja recordatorios" open><summary><b>🔔 Servicios por hacer (${lista.length})</b></summary>
+    ${lista.map(p => {
+      const dias = diasPara(p.proxFecha);
+      const cuando = dias < 0 ? `<b class="vencido">venció hace ${-dias} día(s)</b>` : dias === 0 ? "<b>hoy</b>" : `en ${dias} día(s)`;
+      const tel = (p.telefono || "").replace(/\D/g, "");
+      const msg = `Hola, le escribe ${ajustes.taller}. A su ${tituloDe(p)} le toca servicio ${dias < 0 ? "desde el" : "el"} ${fechaCorta(p.proxFecha)}. ¿Le agendamos?`;
+      return `<div class="recordatorio">
+        <a href="#/p/${p.id}">${esc(tituloDe(p))}${p.cliente ? ` · ${esc(p.cliente)}` : ""}</a>
+        <span class="sub">${fechaCorta(p.proxFecha)} · ${cuando}</span>
+        ${tel ? `<a class="btn sec chico" target="_blank" rel="noopener" href="https://wa.me/${tel.length === 10 ? "52" + tel : tel}?text=${encodeURIComponent(msg)}">💬 Avisar</a>` : ""}
+      </div>`;
+    }).join("")}
+  </details>`;
 }
 
 function tarjetaProyecto(p) {
@@ -248,7 +277,11 @@ function formularioDatos(p) {
       <label>Cliente / empresa<input id="f-cliente" value="${esc(p.cliente || "")}"></label>
       <label>Teléfono<input id="f-tel" type="tel" value="${esc(p.telefono || "")}"></label>
     </div>
-    <label>Cómo llegó (notas de recepción)<textarea id="f-notas" rows="2" placeholder="Golpes, nivel de gasolina, objetos dentro…">${esc(p.notas || "")}</textarea></label>`;
+    <label>Cómo llegó (notas de recepción)<textarea id="f-notas" rows="2" placeholder="Golpes, nivel de gasolina, objetos dentro…">${esc(p.notas || "")}</textarea></label>
+    <div class="dos">
+      <label>Próximo servicio (fecha)<input id="f-prox-fecha" type="date" value="${esc(p.proxFecha || "")}"></label>
+      <label>Próximo servicio a los (${esMc ? "h" : "km"})<input id="f-prox-uso" type="number" inputmode="numeric" value="${esc(p.proxUso || "")}"></label>
+    </div>`;
 }
 
 function activarFormulario(p) {
@@ -274,6 +307,8 @@ function leerFormulario(p) {
     cliente: $("#f-cliente").value.trim(),
     telefono: $("#f-tel").value.trim(),
     notas: $("#f-notas").value.trim(),
+    proxFecha: $("#f-prox-fecha").value,
+    proxUso: $("#f-prox-uso").value.trim(),
   });
   if (esMc) { p.serie = $("#f-placas").value.trim(); p.horas = $("#f-uso").value.trim(); p.capacidad = $("#f-capacidad").value.trim(); }
   else { p.placas = $("#f-placas").value.trim().toUpperCase(); p.km = $("#f-uso").value.trim(); p.vin = $("#f-vin").value.trim().toUpperCase(); }
@@ -402,6 +437,13 @@ function pantallaProyecto(id, pestana) {
     const nuevo = estadoDe(ev.target.value);
     anotar(p, "Estado", `Cambió a: ${nuevo.nombre}`);
     p.estado = nuevo.id;
+    if (nuevo.id === "entregado" && !p.proxFecha) {
+      const r = await elegir("¿Cuándo le toca el próximo servicio?", OPCIONES_SERVICIO.map(o => o[0]), "Fecha AAAA-MM-DD");
+      const op = OPCIONES_SERVICIO.find(o => o[0] === r);
+      if (op) p.proxFecha = sumarMeses(op[1]);
+      else if (r && /^\d{4}-\d{2}-\d{2}$/.test(r)) p.proxFecha = r;
+      if (p.proxFecha) anotar(p, "Recordatorio", `Próximo servicio: ${fechaCorta(p.proxFecha)}`);
+    }
     await guardarProyecto(p);
     aviso("Estado: " + nuevo.nombre);
     pantallaProyecto(id, pestana);
@@ -416,7 +458,9 @@ function tabResumen(p) {
     ["Combustible", p.combustible], [esMc ? "N.º de serie" : "Placas", esMc ? p.serie : p.placas],
     [esMc ? "Horómetro" : "Kilometraje", esMc ? (p.horas ? p.horas + " h" : "") : (p.km ? Number(p.km).toLocaleString("es-MX") + " km" : "")],
     esMc ? ["Capacidad", p.capacidad ? p.capacidad + " kg" : ""] : ["VIN", p.vin],
-    ["Cliente", p.cliente], ["Teléfono", p.telefono], ["Recepción", p.notas], ["Creado", fecha(p.creado)],
+    ["Cliente", p.cliente], ["Teléfono", p.telefono], ["Recepción", p.notas],
+    ["Próximo servicio", [p.proxFecha && fechaCorta(p.proxFecha), p.proxUso && `a los ${Number(p.proxUso).toLocaleString("es-MX")} ${esMc ? "h" : "km"}`].filter(Boolean).join(" · ")],
+    ["Creado", fecha(p.creado)],
   ];
   const fallas = p.fallas || [];
   const resueltas = fallas.filter(f => f.resuelta).length;

@@ -102,6 +102,7 @@ Proyecto = {
   bitacora: [{ id, fecha, tipo, texto, foto? }],             // foto = JPEG comprimido (dataURL)
   piezas: [{ nombre, parte, cantidad }],
   tiempo: { total: ms, inicio: ms | null },                  // cronómetro
+  proxFecha: "AAAA-MM-DD", proxUso: km u horas,              // próximo servicio (fecha local, sin zona horaria)
   chat: [{ rol: "usuario" | "ia", texto, foto?, motor? }],
   enlaces: [{ titulo, url }],
   creado, actualizado
@@ -131,14 +132,15 @@ Barra inferior fija: **Proyectos · Diagnóstico · Maestro · Guías · Ajustes
 - Chips: En el taller · Todos · cada estado. Se recuerdan durante la sesión.
 - Tarjetas: ícono del tipo, "Marca Modelo Año", placas/serie · cliente, fallas pendientes, última actualización, **"⏱ Trabajando ahora"** si el cronómetro corre, chip de estado con color.
 - Vacío: mensaje que explique qué hacer.
+- Arriba, **"🔔 Servicios por hacer"**: vehículos cuyo próximo servicio venció o toca en los próximos 31 días, con "venció hace N días" en rojo y botón **💬 Avisar** (WhatsApp con mensaje listo para agendar).
 
 ### 5.2 Nuevo proyecto (3 pasos con barra de progreso)
 1. **Tipo:** tres tarjetas grandes con **íconos SVG dibujados** (el emoji de camioneta no existe en Windows y no hay emoji de montacargas).
-2. **Datos:** marca (lista por tipo + "Otra"), modelo con sugerencias, año, combustible (montacargas = Gas LP por defecto), motor; coche/camioneta: placas, km, VIN; montacargas: serie, horómetro, capacidad. Cliente, teléfono y cómo llegó. Sólo el modelo es obligatorio.
+2. **Datos:** marca (lista por tipo + "Otra"), modelo con sugerencias, año, combustible (montacargas = Gas LP por defecto), motor; coche/camioneta: placas, km, VIN; montacargas: serie, horómetro, capacidad. Cliente, teléfono, cómo llegó y **próximo servicio** (fecha y km u horas). Sólo el modelo es obligatorio.
 3. **Fallas:** buscador + catálogo por sistema con casillas (sólo lo que aplica al tipo); "Otra falla" + **"🧠 ¿Qué podría ser?"** (motor local propone fallas). **"✔ Crear proyecto"** guarda, anota "Recepción" en la bitácora y abre Fallas.
 
 ### 5.3 Proyecto (pestañas: Datos · Fallas · Bitácora · Guías · Maestro)
-Encabezado con ←, ícono, título, placas/serie · cliente y selector de **estado** (cada cambio se anota solo).
+Encabezado con ←, ícono, título, placas/serie · cliente y selector de **estado** (cada cambio se anota solo). Al pasar a **Entregado** sin próximo servicio, pregunta "¿Cuándo le toca el próximo servicio?" (1, 3, 6 o 12 meses, o una fecha) y lo anota como "Recordatorio".
 
 - **Datos:** contadores; **cronómetro** ▶ Iniciar / ⏸ Pausar (al pausar anota "Trabajo: 45 min (total 2 h 10 min)"); **piezas usadas** (nombre, n.º de parte, cantidad; cada una se anota en la bitácora); ficha; editar; 📞 llamar; 💬 WhatsApp (agrega 52 a números de 10 dígitos) con el estado; 🧾 reporte; 🗑 borrar con confirmación.
 - **Fallas:** por falla: causa real (si ya se resolvió), advertencia, **"📈 En tu taller ha sido…"**, causas, pasos con casillas (contador x/y), herramientas; botones Marcar resuelta / Anotar / Preguntar / Quitar. Al marcar resuelta aparece la ventana **"¿Cuál fue la causa real?"** con las causas del catálogo y un campo libre (se puede omitir). Las fallas escritas a mano muestran sugerencias del motor local para agregarlas.
@@ -268,7 +270,7 @@ Los enlaces se abren fuera de la app: en Android con el navegador del sistema y 
 
 - **`motor.test.js`:** ids únicos, sistemas y tipos válidos, cada tipo con más de 30 fallas, "el mástil no sube con carga" → *Mástil no sube*, "se calienta mucho" → *Sobrecalentamiento*, coche sin fallas de montacargas, acentos, códigos conocidos y desconocidos, texto sin sentido → ayuda, experiencia del taller ordenada por veces.
 - **`prompt.test.js`:** el prompt de `ai.js` es idéntico al documentado.
-- **`interfaz.test.js`** (Chrome o Edge sin ventana vía protocolo DevTools, pantalla de 412 × 915): crear un montacargas Toyota 8FGU25, sugerencias de modelos, sugerencias desde texto libre, palomear un paso, nota en bitácora, cambio de estado, cronómetro, pieza, resolver con causa real, guías con YouTube del modelo, código detectado en bitácora, Maestro local con experiencia, persistencia al recargar, OBD2, calculadoras de torque y horquillas, **cero errores en consola**. Guarda capturas.
+- **`interfaz.test.js`** (Chrome o Edge sin ventana vía protocolo DevTools, pantalla de 412 × 915): crear un montacargas Toyota 8FGU25, sugerencias de modelos, sugerencias desde texto libre, palomear un paso, nota en bitácora, cambio de estado, cronómetro, pieza, resolver con causa real, entregar → próximo servicio → recordatorio con WhatsApp, guías con YouTube del modelo, código detectado en bitácora, Maestro local con experiencia, persistencia al recargar, OBD2, calculadoras de torque y horquillas, **cero errores en consola**. Guarda capturas.
 - **CI:** si una prueba falla, no se compila nada.
 - **Prueba manual en celular real** (pendiente cada versión): instalar APK, tomar foto, exportar respaldo, abrir un enlace de YouTube, usar sin datos móviles.
 
@@ -290,7 +292,7 @@ Los enlaces se abren fuera de la app: en Android con el navegador del sistema y 
 4. **QR por montacargas:** etiqueta que abre su historial; ideal para flotillas.
 5. **Inspección diaria del operador** (checklist tipo OSHA/NOM) con firma.
 6. **Reporte PDF** con logo, fotos antes/después, piezas y tiempo.
-7. **Recordatorios de mantenimiento** por km y por horómetro (250/500/1000/2000 h), con aviso en la lista.
+7. **Recordatorios por horómetro automáticos:** calcular la fecha probable del siguiente servicio de 250/500/1000/2000 h con el promedio de horas por día de cada montacargas.
 8. **Varios mecánicos** con sincronización opcional en la nube y quién hizo cada nota.
 9. **IA sin internet en el celular** (modelo pequeño descargable) como tercer motor.
 10. **Realidad aumentada:** apuntar la cámara al motor y marcar componentes.
@@ -308,7 +310,7 @@ Los enlaces se abren fuera de la app: en Android con el navegador del sistema y 
 | 3 | Maestro IA + `prompt.test.js` | Probar llave en Ajustes; respaldo local sin llave |
 | 4 | Offline (service worker, manifest, íconos) | Abrir sin red tras la primera carga |
 | 5 | Android + Windows + GitHub Actions + firma local | Corrida verde; APK firmado y `.exe` en el Release |
-| 6 | Calculadoras, cronómetro, piezas, aprendizaje | Pruebas ampliadas en verde |
+| 6 | Calculadoras, cronómetro, piezas, aprendizaje, recordatorios de servicio | Pruebas ampliadas en verde |
 | 7 | [MEGA] | Una función a la vez, cada una con sus pruebas |
 
 ---

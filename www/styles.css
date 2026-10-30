@@ -65,6 +65,11 @@ label input, label select, label textarea { color: var(--texto); font-size: 1rem
 .piezas-form input { margin: 0; }
 .piezas-form #pz-cant { width: 70px; flex: none; }
 @media (max-width: 480px) { .piezas-form { flex-wrap: wrap; } .piezas-form input:not(#pz-cant) { flex: 1 1 45%; } }
+.recordatorio { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--borde); }
+.recordatorio > a:first-child { font-weight: 700; text-decoration: none; }
+.recordatorio .sub { grid-column: 1; }
+.recordatorio .btn { grid-column: 2; grid-row: 1 / span 2; }
+.vencido { color: var(--peligro); }
 .en-curso { color: var(--acento); font-weight: 700; }
 .calc .resultado { margin: 4px 0 0; font-size: 1.05rem; }
 blockquote { margin: 6px 0; padding: 8px 12px; border-left: 4px solid var(--acento); background: var(--panel2); border-radius: 6px; }

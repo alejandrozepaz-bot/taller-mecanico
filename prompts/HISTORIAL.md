@@ -24,7 +24,7 @@ Cada versión está guardada en el historial de Git, así que puedes ver los cam
 - **Catálogo mínimo explícito:** las 74 fallas por sistema y los 70 códigos.
 - **Fórmulas exactas** de las 8 calculadoras.
 - **Aprendizaje del taller:** la causa real sube en el ranking y se suma al importar.
-- Funciones que pasaron de MEGA a la app: calculadoras, cronómetro, piezas y aprendizaje.
+- Funciones que pasaron de MEGA a la app: calculadoras, cronómetro, piezas, aprendizaje y **recordatorios de servicio** (al entregar pregunta la fecha; en el inicio aparece "🔔 Servicios por hacer" con WhatsApp para avisar al cliente).
 - **11 casos límite**, pruebas detalladas con su lista de verificación, proceso para publicar una versión y tabla de fases.
 - Correcciones descubiertas al construir: los emojis de camioneta y montacargas no existen en Windows (por eso los íconos son SVG) y la respuesta de la IA puede traer bloques de razonamiento vacíos (por eso sólo se leen los bloques de texto).
 

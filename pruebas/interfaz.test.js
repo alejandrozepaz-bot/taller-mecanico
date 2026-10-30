@@ -118,6 +118,14 @@ async function main() {
     verificar(await js(`return document.querySelector('#mensajes').innerText.includes('En tu taller')`), "maestro local usa la experiencia del taller");
     await foto("08-maestro");
 
+    // Entregar → pide próximo servicio → aparece en recordatorios
+    await js(`const e=document.querySelector('#estado'); e.value='entregado'; e.dispatchEvent(new Event('change'));`); await espera(300);
+    verificar(await js(`return document.querySelector('.modal h3').textContent.includes('próximo servicio')`), "al entregar pregunta el próximo servicio");
+    await js(`[...document.querySelectorAll('.modal .opcion')].find(b=>b.textContent==='En 1 mes').click()`); await espera(400);
+    await js(`location.hash='#/'`); await espera(300);
+    verificar(await js(`const r=document.querySelector('.recordatorios'); return !!r && r.innerText.includes('Toyota 8FGU25') && r.innerHTML.includes('wa.me/525512345678')`), "recordatorio de servicio con WhatsApp");
+    await foto("08b-recordatorios");
+
     // Persistencia tras recargar
     await cdp("Page.reload"); await espera(1500);
     await js(`location.hash='#/'`); await espera(300);

@@ -1,6 +1,6 @@
 {
   "name": "taller-mecanico",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "App para mecánicos de coches, camionetas y montacargas: proyectos, diagnóstico, bitácora y Maestro IA. Funciona sin internet.",
   "scripts": {
