@@ -7,7 +7,10 @@ App para mecánicos de **coches, camionetas y montacargas**. Funciona **sin inte
 - **Bitácora**: notas, mediciones, piezas cambiadas y fotos, con fecha y hora.
 - **Guías**: búsquedas directas en YouTube, manuales de servicio, ManualsLib, diagramas y foros para el modelo exacto.
 - **Maestro**: asistente experto. Con internet usa IA (Claude); sin internet usa el **motor local**.
-- **Diagnóstico rápido** y buscador de **códigos OBD2**.
+- **Diagnóstico rápido**, buscador de **códigos OBD2** y **8 calculadoras** (Ohm, torque, presión, temperatura, distancia, cilindro hidráulico, cadenas y horquillas de montacargas).
+- **Cronómetro** de horas trabajadas y **piezas usadas** por proyecto, incluidas en el reporte.
+- **El taller aprende**: al resolver una falla eliges la causa real y la app la recuerda en los siguientes diagnósticos.
+- **Recordatorios de servicio**: al entregar, la app pregunta cuándo le toca el próximo servicio y luego te avisa con un botón de WhatsApp para el cliente.
 - **Respaldo** para exportar e importar.
 
 ## Descargar
@@ -37,4 +40,7 @@ node pruebas/motor.test.js     # pruebas del motor local
 
 ## Publicar una versión nueva
 1. Cambia `version` en `package.json`, `escritorio/package.json` y `VERSION` en `www/app.js` (y el nombre del caché en `www/sw.js`).
-2. `git tag v1.x.x && git push --tags` → GitHub compila y publica las descargas.
+2. `git tag -a v1.x.x -m "v1.x.x" && git push origin v1.x.x` → GitHub prueba, compila y publica los `.exe`.
+3. `powershell -ExecutionPolicy Bypass -File firmar-apk.ps1` → firma el APK con la llave de la carpeta `firma\` (sólo existe en esta PC), lo copia al Escritorio y lo sube a la versión.
+
+> ⚠️ Respalda la carpeta `firma\`. Sin ella no podrás publicar actualizaciones del APK que se instalen encima de la anterior.
