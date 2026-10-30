@@ -54,21 +54,16 @@ jobs:
           grep -E "versionCode|versionName" android/app/build.gradle
       - name: Compilar APK
         run: cd android && ./gradlew assembleRelease --no-daemon
-      - name: Firmar APK
-        env:
-          FIRMA_BASE64: ${{ secrets.FIRMA_BASE64 }}
-          FIRMA_CLAVE: ${{ secrets.FIRMA_CLAVE }}
+      # La llave de firma vive sólo en la PC del dueño: este APK sale SIN firmar
+      # y se firma en local con firmar-apk.ps1, que también lo sube a la versión.
+      - name: Alinear APK sin firmar
         run: |
-          echo "$FIRMA_BASE64" | base64 -d > firma.jks
           BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
-          "$BT/zipalign" -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk alineado.apk
-          "$BT/apksigner" sign --ks firma.jks --ks-pass env:FIRMA_CLAVE --ks-key-alias taller --out Taller-Mecanico.apk alineado.apk
-          "$BT/apksigner" verify --print-certs Taller-Mecanico.apk
-          rm firma.jks
+          "$BT/zipalign" -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk Taller-Mecanico-sin-firmar.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: android
-          path: Taller-Mecanico.apk
+          name: android-sin-firmar
+          path: Taller-Mecanico-sin-firmar.apk
 
   windows:
     needs: pruebas
@@ -107,5 +102,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" descargas/android/*.apk descargas/windows/*.exe \
+          gh release create "$GITHUB_REF_NAME" descargas/windows/*.exe \
             --title "Taller Mecánico $GITHUB_REF_NAME" --notes-file docs/COMO-INSTALAR.md
