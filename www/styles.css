@@ -56,6 +56,17 @@ label input, label select, label textarea { color: var(--texto); font-size: 1rem
 .caja { background: var(--panel); border: 1px solid var(--borde); border-radius: var(--radio); padding: 14px; margin: 10px 0; }
 .caja summary { cursor: pointer; }
 .alerta { background: rgba(220, 38, 38, .12); border: 1px solid rgba(220, 38, 38, .4); border-radius: 10px; padding: 10px; margin: 8px 0; }
+.exito { background: rgba(22, 163, 74, .12); border: 1px solid rgba(22, 163, 74, .4); border-radius: 10px; padding: 10px; margin: 8px 0; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: flex-end; justify-content: center; z-index: 40; padding: 16px; }
+.modal .caja { width: 100%; max-width: 520px; max-height: 85vh; overflow-y: auto; }
+.modal .opcion { width: 100%; justify-content: flex-start; text-align: left; margin: 4px 0; font-weight: 600; }
+.cronometro { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cronometro b { display: block; font-size: 1.5rem; }
+.piezas-form input { margin: 0; }
+.piezas-form #pz-cant { width: 70px; flex: none; }
+@media (max-width: 480px) { .piezas-form { flex-wrap: wrap; } .piezas-form input:not(#pz-cant) { flex: 1 1 45%; } }
+.en-curso { color: var(--acento); font-weight: 700; }
+.calc .resultado { margin: 4px 0 0; font-size: 1.05rem; }
 blockquote { margin: 6px 0; padding: 8px 12px; border-left: 4px solid var(--acento); background: var(--panel2); border-radius: 6px; }
 
 .acciones { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; margin: 12px 0; }

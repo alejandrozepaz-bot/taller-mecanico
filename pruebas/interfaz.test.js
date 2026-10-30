@@ -86,6 +86,24 @@ async function main() {
     await js(`const e=document.querySelector('#estado'); e.value='reparando'; e.dispatchEvent(new Event('change'));`); await espera(400);
     verificar(await js(`return document.querySelector('#estado').value==='reparando'`), "cambio de estado");
 
+    // Cronómetro y piezas
+    await js(`location.hash='#/p/${id}/resumen'`); await espera(300);
+    await js(`document.querySelector('#crono').click()`); await espera(300);
+    verificar(await js(`return document.querySelector('#crono').textContent.includes('Pausar')`), "cronómetro inicia");
+    await js(`document.querySelector('#crono').click()`); await espera(300);
+    await js(`document.querySelector('#pz-nombre').value='Filtro de succión'; document.querySelector('#pz-parte').value='67501-23600-71'; document.querySelector('#pz-agregar').click();`); await espera(300);
+    verificar(await js(`return document.querySelector('#piezas').innerText.includes('Filtro de succión')`), "pieza agregada");
+    await foto("06b-datos");
+
+    // Resolver falla con causa real → el taller aprende
+    await js(`location.hash='#/p/${id}/fallas'`); await espera(300);
+    await js(`document.querySelector('[data-resolver="0"]').click()`); await espera(300);
+    verificar(await js(`return !!document.querySelector('.modal')`), "pregunta la causa real al resolver");
+    await foto("06c-causa-real");
+    await js(`[...document.querySelectorAll('.modal .opcion')].find(b=>b.textContent.includes('Filtro de succión')).click()`); await espera(400);
+    verificar(await js(`const t=document.querySelector('#contenido').textContent; return t.includes('Causa real: Filtro de succión tapado') && t.includes('En tu taller ha sido') && t.includes('✅')`), "guarda la causa real y la experiencia del taller");
+    await js(`document.querySelector('details.falla').open=true`); await foto("06d-resuelta");
+
     // Guías
     await js(`location.hash='#/p/${id}/guias'`); await espera(300);
     verificar(await js(`return [...document.querySelectorAll('a')].some(a=>a.href.includes('youtube.com/results') && decodeURIComponent(a.href).includes('8FGU25'))`), "guías con búsqueda de YouTube del modelo");
@@ -96,6 +114,8 @@ async function main() {
     await js(`location.hash='#/p/${id}/maestro'`); await espera(300);
     await js(`document.querySelector('#pregunta').value='el mastil baja solo con carga'; document.querySelector('#enviar').click();`); await espera(500);
     verificar(await js(`return document.querySelector('#mensajes').innerText.includes('Mástil baja solo')`), "maestro local responde");
+    await js(`document.querySelector('#pregunta').value='no sube el mastil'; document.querySelector('#enviar').click();`); await espera(500);
+    verificar(await js(`return document.querySelector('#mensajes').innerText.includes('En tu taller')`), "maestro local usa la experiencia del taller");
     await foto("08-maestro");
 
     // Persistencia tras recargar
@@ -108,6 +128,10 @@ async function main() {
     await js(`location.hash='#/diagnostico'`); await espera(300);
     await js(`document.querySelector('#codigo').value='p0171'; document.querySelector('#c-ir').click();`); await espera(100);
     verificar(await js(`return document.querySelector('#c-resultado').innerText.includes('Mezcla pobre')`), "busca código OBD2");
+    await js(`const c=document.querySelector('[data-calc="torque"]'); c.open=true; const i=c.querySelector('[data-k="lb"]'); i.value='100'; i.dispatchEvent(new Event('input',{bubbles:true}));`); await espera(100);
+    verificar(await js(`return document.querySelector('[data-calc="torque"] .resultado').innerText.includes('135.6 N·m')`), "calculadora de torque");
+    await js(`const c=document.querySelector('[data-calc="horquilla"]'); c.open=true; const a=c.querySelector('[data-k="orig"]'); a.value='45'; const b=c.querySelector('[data-k="actual"]'); b.value='40'; b.dispatchEvent(new Event('input',{bubbles:true}));`); await espera(100);
+    verificar(await js(`return document.querySelector('[data-calc="horquilla"] .resultado').innerText.includes('Retirar')`), "calculadora de horquillas");
     await foto("10-diagnostico");
     await js(`location.hash='#/ajustes'`); await espera(300); await foto("11-ajustes");
     await js(`location.hash='#/guias'`); await espera(300); await foto("12-guias");

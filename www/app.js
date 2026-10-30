@@ -1,6 +1,6 @@
 // Interfaz de la app del taller. Vanilla JS, sin dependencias, funciona sin internet.
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const $ = s => document.querySelector(s);
 const vista = () => $("#vista");
 
@@ -8,6 +8,7 @@ let proyectos = [];
 let ajustes = { llave: "", taller: "Mi Taller", motorPreferido: "auto" };
 let borrador = null;     // proyecto que se está creando
 let chatGeneral = [];
+let aprendido = {};      // { idFalla: { "causa real": veces } }
 let pensando = false;
 
 // ---------- utilidades ----------
@@ -43,6 +44,35 @@ function aviso(texto) {
   clearTimeout(aviso.temporizador);
   aviso.temporizador = setTimeout(() => t.classList.remove("visible"), 2500);
 }
+
+// Ventana con botones de opciones + campo libre. Devuelve el texto elegido o null.
+function elegir(titulo, opciones, placeholder) {
+  return new Promise(ok => {
+    const d = document.createElement("div");
+    d.className = "modal";
+    d.innerHTML = `<div class="caja">
+      <h3>${esc(titulo)}</h3>
+      ${opciones.map((o, i) => `<button class="btn sec opcion" data-i="${i}">${esc(o)}</button>`).join("")}
+      <input id="modal-otra" placeholder="${esc(placeholder || "Otra (escríbela)")}">
+      <div class="acciones"><button class="btn sec" data-cerrar>Omitir</button><button class="btn" data-otra>Guardar</button></div>
+    </div>`;
+    const cerrar = v => { d.remove(); ok(v); };
+    d.onclick = e => {
+      const b = e.target.closest("button");
+      if (e.target === d || (b && b.dataset.cerrar !== undefined)) return cerrar(null);
+      if (!b) return;
+      if (b.dataset.i !== undefined) return cerrar(opciones[+b.dataset.i]);
+      if (b.dataset.otra !== undefined) return cerrar(d.querySelector("#modal-otra").value.trim() || null);
+    };
+    document.body.appendChild(d);
+  });
+}
+
+const duracion = ms => {
+  const min = Math.round(ms / 60000);
+  return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${min % 60} min`;
+};
+const tiempoTotal = p => ((p.tiempo && p.tiempo.total) || 0) + (p.tiempo && p.tiempo.inicio ? Date.now() - p.tiempo.inicio : 0);
 
 function comprimirFoto(archivo, maximo = 1024) {
   return new Promise((ok, mal) => {
@@ -146,6 +176,7 @@ function tarjetaProyecto(p) {
       <b>${esc(tituloDe(p))}</b>
       <span class="sub">${esc([p.placas || p.serie, p.cliente].filter(Boolean).join(" · ") || TIPOS[p.tipo].nombre)}</span>
       <span class="sub">${pendientes ? `🔴 ${pendientes} falla(s) pendiente(s)` : "✅ Sin fallas pendientes"} · ${fecha(p.actualizado)}</span>
+      ${p.tiempo && p.tiempo.inicio ? `<span class="sub en-curso">⏱ Trabajando ahora · ${duracion(tiempoTotal(p))}</span>` : ""}
     </div>
     <span class="estado" style="background:${e.color}">${e.nombre}</span>
   </a>`;
@@ -396,6 +427,20 @@ function tabResumen(p) {
       <div><b>${resueltas}</b><span>resueltas</span></div>
       <div><b>${(p.bitacora || []).length}</b><span>notas</span></div>
     </div>
+    <div class="caja cronometro">
+      <div><span class="sub">⏱ Tiempo trabajado</span><b id="tiempo">${duracion(tiempoTotal(p))}</b></div>
+      <button class="btn ${p.tiempo && p.tiempo.inicio ? "peligro" : ""}" id="crono">${p.tiempo && p.tiempo.inicio ? "⏸ Pausar" : "▶ Iniciar"}</button>
+    </div>
+    <div class="caja">
+      <h3>🔩 Piezas usadas</h3>
+      <div id="piezas"></div>
+      <div class="fila piezas-form">
+        <input id="pz-nombre" placeholder="Pieza (ej. Bomba de agua)">
+        <input id="pz-parte" placeholder="N.º de parte">
+        <input id="pz-cant" type="number" inputmode="numeric" min="1" value="1" aria-label="Cantidad">
+        <button class="btn chico" id="pz-agregar">＋</button>
+      </div>
+    </div>
     <div class="caja"><dl>${filas.filter(f => f[1]).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div>
     <div class="acciones izq">
       <button class="btn sec" id="editar">✏️ Editar datos</button>
@@ -403,6 +448,32 @@ function tabResumen(p) {
       <button class="btn sec" id="reporte">🧾 Reporte</button>
       <button class="btn peligro" id="borrar">🗑 Borrar</button>
     </div>`;
+  $("#crono").onclick = async () => {
+    p.tiempo = p.tiempo || { total: 0, inicio: null };
+    if (p.tiempo.inicio) {
+      const tramo = Date.now() - p.tiempo.inicio;
+      p.tiempo.total += tramo; p.tiempo.inicio = null;
+      anotar(p, "Tiempo", `Trabajo: ${duracion(tramo)} (total ${duracion(p.tiempo.total)})`);
+    } else {
+      p.tiempo.inicio = Date.now();
+    }
+    await guardarProyecto(p); tabResumen(p);
+  };
+  clearInterval(tabResumen.reloj);
+  if (p.tiempo && p.tiempo.inicio) tabResumen.reloj = setInterval(() => { const t = $("#tiempo"); if (t) t.textContent = duracion(tiempoTotal(p)); else clearInterval(tabResumen.reloj); }, 30000);
+  const pintarPiezas = () => {
+    $("#piezas").innerHTML = (p.piezas || []).map((z, i) => `<div class="enlace-guardado"><span>${esc(z.cantidad)} × <b>${esc(z.nombre)}</b>${z.parte ? ` <span class="sub">${esc(z.parte)}</span>` : ""}</span><button class="mini" data-i="${i}">✕</button></div>`).join("") || `<p class="sub">Aún no hay piezas.</p>`;
+  };
+  $("#piezas").onclick = async e => { const i = e.target.dataset.i; if (i === undefined) return; p.piezas.splice(+i, 1); await guardarProyecto(p); pintarPiezas(); };
+  $("#pz-agregar").onclick = async () => {
+    const nombre = $("#pz-nombre").value.trim(); if (!nombre) return aviso("Escribe la pieza");
+    const z = { nombre, parte: $("#pz-parte").value.trim(), cantidad: Math.max(1, +$("#pz-cant").value || 1) };
+    p.piezas = p.piezas || []; p.piezas.push(z);
+    anotar(p, "Pieza cambiada", `${z.cantidad} × ${z.nombre}${z.parte ? " (" + z.parte + ")" : ""}`);
+    await guardarProyecto(p); pintarPiezas();
+    $("#pz-nombre").value = ""; $("#pz-parte").value = ""; $("#pz-cant").value = 1;
+  };
+  pintarPiezas();
   $("#editar").onclick = () => {
     $("#contenido").innerHTML = `<div class="formulario">${formularioDatos(p)}</div>
       <div class="acciones"><button class="btn sec" id="cancelar">Cancelar</button><button class="btn" id="guardar">Guardar</button></div>`;
@@ -425,7 +496,12 @@ function reporteTexto(p) {
   if (p.placas || p.serie) l.push(`${p.placas ? "Placas" : "Serie"}: ${p.placas || p.serie}`);
   if (p.cliente) l.push(`Cliente: ${p.cliente}`);
   l.push(`Estado: ${estadoDe(p.estado).nombre}`, "", "FALLAS:");
-  for (const f of p.fallas || []) l.push(`${f.resuelta ? "✔" : "•"} ${nombreFalla(f)}`);
+  for (const f of p.fallas || []) l.push(`${f.resuelta ? "✔" : "•"} ${nombreFalla(f)}${f.causaReal ? " — causa: " + f.causaReal : ""}`);
+  if ((p.piezas || []).length) {
+    l.push("", "PIEZAS:");
+    for (const z of p.piezas) l.push(`- ${z.cantidad} × ${z.nombre}${z.parte ? " (" + z.parte + ")" : ""}`);
+  }
+  if (tiempoTotal(p)) l.push("", `TIEMPO DE TRABAJO: ${duracion(tiempoTotal(p))}`);
   l.push("", "TRABAJO REALIZADO:");
   for (const b of p.bitacora || []) if (b.tipo !== "Estado") l.push(`- ${fecha(b.fecha)} [${b.tipo}] ${b.texto}`);
   return l.join("\n");
@@ -451,15 +527,18 @@ function tabFallas(p) {
     let cuerpo = "";
     if (info) {
       const hechos = info.p.filter((_, j) => p.checks[`${f.id}-${j}`]).length;
+      const exp = Motor.experiencia(aprendido, f.id);
       cuerpo = `
+        ${f.causaReal ? `<div class="exito">✔ Causa real: <b>${esc(f.causaReal)}</b></div>` : ""}
         ${info.w ? `<div class="alerta">⚠️ ${esc(info.w)}</div>` : ""}
+        ${exp.length ? `<div class="exito">📈 En tu taller ha sido: ${exp.slice(0, 3).map(([c, n]) => `<b>${esc(c)}</b> (${n})`).join(", ")}</div>` : ""}
         <h4>Causas probables</h4><ol>${info.c.map(c => `<li>${esc(c)}</li>`).join("")}</ol>
         <h4>Revisión paso a paso <span class="sub">(${hechos}/${info.p.length})</span></h4>
         ${info.p.map((paso, j) => `<label class="check"><input type="checkbox" data-check="${f.id}-${j}" ${p.checks[`${f.id}-${j}`] ? "checked" : ""}> ${esc(paso)}</label>`).join("")}
         ${info.h ? `<p class="sub">🧰 ${esc(info.h.join(", "))}</p>` : ""}`;
     } else {
       const sug = Motor.diagnosticar(f.texto, p.tipo).slice(0, 3);
-      cuerpo = `<p class="sub">Falla escrita por ti.</p>` + (sug.length ?
+      cuerpo = (f.causaReal ? `<div class="exito">✔ Causa real: <b>${esc(f.causaReal)}</b></div>` : "") + `<p class="sub">Falla escrita por ti.</p>` + (sug.length ?
         `<p>El motor local cree que se parece a:</p>${sug.map(s => `<button class="btn sec chico" data-agregar="${s.falla.id}">＋ ${esc(s.falla.n)}</button>`).join(" ")}` :
         `<p class="sub">No hay coincidencias locales. Pregúntale al Maestro.</p>`);
     }
@@ -501,7 +580,23 @@ function tabFallas(p) {
     if (d.resolver) {
       const f = p.fallas[+d.resolver];
       f.resuelta = !f.resuelta;
-      anotar(p, "Falla", `${f.resuelta ? "Resuelta" : "Reabierta"}: ${nombreFalla(f)}`);
+      if (f.resuelta) {
+        // El taller aprende: la causa real sube en el ranking para la próxima vez.
+        const info = f.id ? Motor.porId(f.id) : null;
+        const causa = await elegir("¿Cuál fue la causa real?", info ? info.c : [], "Escribe la causa real");
+        if (causa) {
+          f.causaReal = causa;
+          if (f.id) {
+            aprendido[f.id] = aprendido[f.id] || {};
+            aprendido[f.id][causa] = (aprendido[f.id][causa] || 0) + 1;
+            await DB.escribir("aprendido", aprendido);
+          }
+        }
+        anotar(p, "Falla", `Resuelta: ${nombreFalla(f)}${causa ? " — causa real: " + causa : ""}`);
+      } else {
+        delete f.causaReal;
+        anotar(p, "Falla", `Reabierta: ${nombreFalla(f)}`);
+      }
       await guardarProyecto(p); tabFallas(p);
     } else if (d.quitar) {
       const f = p.fallas[+d.quitar];
@@ -698,10 +793,10 @@ function pintarChat(contenedor, historial, proyecto, guardar) {
     pensando = true; pintarMensajes();
     let respuesta, usado = motorActivo();
     try {
-      respuesta = usado === "ia" ? await IA.preguntar(historial, proyecto, ajustes.llave) : Motor.responder(texto, proyecto);
+      respuesta = usado === "ia" ? await IA.preguntar(historial, proyecto, ajustes.llave) : Motor.responder(texto, proyecto, aprendido);
     } catch (err) {
       usado = "local";
-      respuesta = `> ${err.message}\n\nMientras tanto, esto dice el motor local:\n\n` + Motor.responder(texto, proyecto);
+      respuesta = `> ${err.message}\n\nMientras tanto, esto dice el motor local:\n\n` + Motor.responder(texto, proyecto, aprendido);
     }
     pensando = false;
     historial.push({ rol: "ia", texto: respuesta, motor: usado });
@@ -730,8 +825,11 @@ function pantallaDiagnostico() {
       <div class="fila"><input id="codigo" placeholder="P0300" maxlength="5" style="text-transform:uppercase"><button class="btn" id="c-ir">Buscar</button></div>
       <div id="c-resultado"></div>
     </div>
+    <h3>🧮 Calculadoras</h3>
+    <div id="calculadoras">${htmlCalculadoras()}</div>
     <h3>Catálogo de fallas</h3>
     <div id="catalogo"></div>`;
+  activarCalculadoras();
   let tipo = "coche";
   $("#d-tipo").onclick = e => {
     const b = e.target.closest("[data-t]"); if (!b) return;
@@ -740,7 +838,7 @@ function pantallaDiagnostico() {
     pintarCatalogo();
   };
   activarDictado($("#d-dictar"), $("#d-texto"));
-  $("#d-ir").onclick = () => { $("#d-resultado").innerHTML = `<div class="caja respuesta">${markdown(Motor.responder($("#d-texto").value, { tipo, marca: "", modelo: "" }).replace(/^\*\*.*\*\*\n\n/, ""))}</div>`; };
+  $("#d-ir").onclick = () => { $("#d-resultado").innerHTML = `<div class="caja respuesta">${markdown(Motor.responder($("#d-texto").value, { tipo, marca: "", modelo: "" }, aprendido).replace(/^\*\*.*\*\*\n\n/, ""))}</div>`; };
   $("#c-ir").onclick = () => {
     const c = $("#codigo").value.trim().toUpperCase();
     if (!/^[PBCU][0-9A-F]{4}$/.test(c)) return aviso("Formato: letra + 4 dígitos (P0300)");
@@ -760,6 +858,68 @@ function pantallaDiagnostico() {
       </details>`).join("");
   };
   pintarCatalogo();
+}
+
+// ---------- CALCULADORAS ----------
+// Cada una: campos [id, etiqueta] y una función que recibe los números y regresa el texto del resultado.
+const redondeo = (n, d = 2) => Number.isFinite(n) ? +n.toFixed(d) : "—";
+const CALCULADORAS = [
+  { id: "ohm", n: "Ley de Ohm (deja vacío lo que buscas)", campos: [["v", "Voltaje (V)"], ["i", "Corriente (A)"], ["r", "Resistencia (Ω)"]],
+    f: ({ v, i, r }) => {
+      if (v == null && i != null && r != null) return `Voltaje = <b>${redondeo(i * r)} V</b> · Potencia ${redondeo(i * i * r)} W`;
+      if (i == null && v != null && r != null) return `Corriente = <b>${redondeo(v / r, 3)} A</b> · Potencia ${redondeo(v * v / r)} W`;
+      if (r == null && v != null && i != null) return `Resistencia = <b>${redondeo(v / i, 3)} Ω</b> · Potencia ${redondeo(v * i)} W`;
+      return "Llena dos de los tres datos.";
+    } },
+  { id: "torque", n: "Torque: lb·pie ↔ N·m", campos: [["lb", "lb·pie"], ["nm", "N·m"]],
+    f: ({ lb, nm }) => lb != null ? `${lb} lb·pie = <b>${redondeo(lb * 1.35582, 1)} N·m</b>` : nm != null ? `${nm} N·m = <b>${redondeo(nm / 1.35582, 1)} lb·pie</b>` : "Escribe un valor." },
+  { id: "presion", n: "Presión: PSI ↔ bar ↔ kPa", campos: [["psi", "PSI"], ["bar", "bar"]],
+    f: ({ psi, bar }) => psi != null ? `${psi} PSI = <b>${redondeo(psi / 14.5038)} bar</b> = ${redondeo(psi * 6.89476, 1)} kPa` : bar != null ? `${bar} bar = <b>${redondeo(bar * 14.5038, 1)} PSI</b> = ${redondeo(bar * 100, 1)} kPa` : "Escribe un valor." },
+  { id: "temp", n: "Temperatura: °C ↔ °F", campos: [["c", "°C"], ["fa", "°F"]],
+    f: ({ c, fa }) => c != null ? `${c} °C = <b>${redondeo(c * 9 / 5 + 32, 1)} °F</b>` : fa != null ? `${fa} °F = <b>${redondeo((fa - 32) * 5 / 9, 1)} °C</b>` : "Escribe un valor." },
+  { id: "dist", n: "Distancia: km ↔ millas", campos: [["km", "km"], ["mi", "millas"]],
+    f: ({ km, mi }) => km != null ? `${km} km = <b>${redondeo(km / 1.60934, 1)} millas</b>` : mi != null ? `${mi} millas = <b>${redondeo(mi * 1.60934, 1)} km</b>` : "Escribe un valor." },
+  { id: "cilindro", n: "Fuerza de cilindro hidráulico", campos: [["bar", "Presión (bar)"], ["d", "Diámetro del pistón (mm)"]],
+    f: ({ bar, d }) => {
+      if (bar == null || d == null) return "Escribe presión y diámetro.";
+      const area = Math.PI * Math.pow(d / 20, 2); // cm²
+      return `Área ${redondeo(area, 1)} cm² · Fuerza ≈ <b>${redondeo(bar * area * 1.0197, 0)} kg</b> (${redondeo(bar * area * 10, 0)} N)`;
+    } },
+  { id: "cadena", n: "Elongación de cadena de montacargas", campos: [["pasos", "Número de pasos medidos"], ["paso", "Paso nominal (mm)"], ["medida", "Medida actual (mm)"]],
+    f: ({ pasos, paso, medida }) => {
+      if (!pasos || !paso || medida == null) return "Mide varios pasos (ej. 10) con la cadena tensa.";
+      const pct = (medida - pasos * paso) / (pasos * paso) * 100;
+      const veredicto = pct >= 3 ? "🔴 Cambiar cadenas (en pares)" : pct >= 2 ? "🟠 Cerca del límite: confirma el % del fabricante" : "🟢 Dentro de rango";
+      return `Elongación <b>${redondeo(pct, 2)} %</b> · ${veredicto}`;
+    } },
+  { id: "horquilla", n: "Desgaste de horquilla (talón)", campos: [["orig", "Espesor original (mm)"], ["actual", "Espesor actual (mm)"]],
+    f: ({ orig, actual }) => {
+      if (!orig || actual == null) return "Mide el espesor en el brazo vertical (original) y en el talón.";
+      const pct = (orig - actual) / orig * 100;
+      return `Desgaste <b>${redondeo(pct, 1)} %</b> · ${pct >= 10 ? "🔴 Retirar de servicio (10 % o más)" : "🟢 Puede seguir trabajando"}`;
+    } },
+];
+
+function htmlCalculadoras() {
+  return CALCULADORAS.map(c => `
+    <details class="caja calc" data-calc="${c.id}"><summary><b>${c.n}</b></summary>
+      <div class="dos">${c.campos.map(([k, e]) => `<label>${e}<input type="number" inputmode="decimal" step="any" data-k="${k}"></label>`).join("")}</div>
+      <p class="resultado">Escribe los datos.</p>
+    </details>`).join("");
+}
+
+function activarCalculadoras() {
+  $("#calculadoras").oninput = e => {
+    const caja = e.target.closest("[data-calc]"); if (!caja) return;
+    const calc = CALCULADORAS.find(c => c.id === caja.dataset.calc);
+    // En conversiones de dos campos, el que se acaba de escribir manda y el otro se ignora.
+    const valores = {};
+    caja.querySelectorAll("input").forEach(i => { valores[i.dataset.k] = i.value === "" ? null : +i.value; });
+    if (calc.campos.length === 2 && !["cilindro", "horquilla"].includes(calc.id)) {
+      for (const [k] of calc.campos) if (k !== e.target.dataset.k) { valores[k] = null; caja.querySelector(`[data-k="${k}"]`).value = ""; }
+    }
+    caja.querySelector(".resultado").innerHTML = calc.f(valores);
+  };
 }
 
 // ---------- GUÍAS GENERALES ----------
@@ -860,14 +1020,14 @@ function pantallaAjustes() {
   $("#a-vaciar").onclick = async () => {
     if (!confirm("¿Borrar TODOS los proyectos? Haz un respaldo antes.")) return;
     if (prompt('Escribe BORRAR para confirmar') !== "BORRAR") return;
-    await DB.vaciar(); proyectos = []; chatGeneral = []; aviso("Todo borrado"); ir("/");
+    await DB.vaciar(); proyectos = []; chatGeneral = []; aprendido = {}; aviso("Todo borrado"); ir("/");
   };
   const bi = $("#a-instalar");
   if (bi) bi.onclick = async () => { if (!window.eventoInstalar) return; window.eventoInstalar.prompt(); window.eventoInstalar = null; };
 }
 
 async function exportar() {
-  const datos = { app: "taller-mecanico", version: VERSION, fecha: Date.now(), ajustes: { taller: ajustes.taller }, proyectos, biblioteca: (await DB.leer("biblioteca")) || [] };
+  const datos = { app: "taller-mecanico", version: VERSION, fecha: Date.now(), ajustes: { taller: ajustes.taller }, proyectos, biblioteca: (await DB.leer("biblioteca")) || [], aprendido };
   const nombre = `respaldo-taller-${new Date().toISOString().slice(0, 10)}.json`;
   const n = nativo();
   if (n && n.Filesystem && n.Share) {
@@ -894,6 +1054,14 @@ async function importar(e) {
     if (!confirm(`Importar ${datos.proyectos.length} proyecto(s)? Los que ya existan se actualizarán.`)) return;
     for (const p of datos.proyectos) await guardarProyecto(p);
     if (datos.biblioteca) await DB.escribir("biblioteca", datos.biblioteca);
+    if (datos.aprendido) {
+      // Suma la experiencia importada a la que ya hay en este equipo.
+      for (const [id, causas] of Object.entries(datos.aprendido)) {
+        aprendido[id] = aprendido[id] || {};
+        for (const [c, n] of Object.entries(causas)) aprendido[id][c] = (aprendido[id][c] || 0) + n;
+      }
+      await DB.escribir("aprendido", aprendido);
+    }
     proyectos = await DB.todos();
     aviso("Respaldo importado");
   } catch (err) { aviso("Ese archivo no es un respaldo válido"); }
@@ -905,6 +1073,7 @@ async function iniciar() {
   try {
     proyectos = (await DB.todos()) || [];
     chatGeneral = (await DB.leer("chatGeneral")) || [];
+    aprendido = (await DB.leer("aprendido")) || {};
   } catch (e) { aviso("No se pudo abrir el almacenamiento local"); }
   window.addEventListener("hashchange", enrutar);
   window.addEventListener("online", () => aviso("🌐 Con internet: Maestro IA disponible"));

@@ -63,4 +63,12 @@ prueba("texto sin sentido da ayuda en lugar de fallar", () => {
   assert(/No encontré/.test(Motor.responder("hola", null)));
 });
 
+prueba("la experiencia del taller aparece en la respuesta, ordenada por veces", () => {
+  const aprendido = { mastil_no_sube: { "Bomba hidráulica gastada": 1, "Filtro de succión tapado": 3 } };
+  assert.strictEqual(Motor.experiencia(aprendido, "mastil_no_sube")[0][0], "Filtro de succión tapado");
+  const r = Motor.responder("no sube el mastil", { tipo: "montacargas", marca: "Toyota", modelo: "8FGU25" }, aprendido);
+  assert(/En tu taller.*Filtro de succión tapado \(3 veces\)/.test(r));
+  assert.strictEqual(Motor.experiencia(null, "x").length, 0);
+});
+
 console.log(`\n${ok} pruebas pasaron`);

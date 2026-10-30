@@ -1,5 +1,5 @@
 // Guarda la app en el equipo para que abra sin internet.
-const CACHE = "taller-v1.0.0";
+const CACHE = "taller-v1.1.0";
 const ARCHIVOS = ["./", "index.html", "styles.css", "data.js", "engine.js", "db.js", "ai.js", "app.js", "manifest.webmanifest", "icono.svg", "icono-192.png", "icono-512.png"];
 
 self.addEventListener("install", e => {

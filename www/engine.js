@@ -59,8 +59,14 @@ const Motor = (() => {
     return resultados.sort((a, b) => b.puntos - a.puntos).slice(0, 5);
   }
 
+  // Lo que el taller ha aprendido: { idFalla: { "causa real": veces } } → las causas ordenadas por veces.
+  function experiencia(aprendido, idFalla) {
+    const conteo = (aprendido || {})[idFalla];
+    return conteo ? Object.entries(conteo).sort((a, b) => b[1] - a[1]) : [];
+  }
+
   // Respuesta de chat del "Maestro local" en texto con formato sencillo.
-  function responder(texto, proyecto) {
+  function responder(texto, proyecto, aprendido) {
     const tipo = proyecto ? proyecto.tipo : null;
     const codigos = buscarCodigos(texto);
     const lista = diagnosticar(texto, tipo);
@@ -79,6 +85,8 @@ const Motor = (() => {
       const f = mejor.falla;
       r += `### Lo más probable: ${f.n}\n`;
       if (f.w) r += `> ⚠️ ${f.w}\n\n`;
+      const exp = experiencia(aprendido, f.id);
+      if (exp.length) r += `**En tu taller** esta falla ha sido: ${exp.slice(0, 3).map(([c, n]) => `${c} (${n} ${n === 1 ? "vez" : "veces"})`).join(", ")}.\n\n`;
       r += "**Causas (de más a menos común):**\n";
       f.c.forEach((c, i) => (r += `${i + 1}. ${c}\n`));
       r += "\n**Qué revisar, paso a paso:**\n";
@@ -93,5 +101,5 @@ const Motor = (() => {
     return r;
   }
 
-  return { normal, aplica, fallasPara, porId, buscarCodigos, explicarCodigo, diagnosticar, responder };
+  return { normal, aplica, fallasPara, porId, buscarCodigos, explicarCodigo, diagnosticar, experiencia, responder };
 })();
